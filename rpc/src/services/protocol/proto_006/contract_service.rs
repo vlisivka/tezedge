@@ -4,8 +4,6 @@
 use std::convert::TryInto;
 use std::string::ToString;
 
-use failure::bail;
-
 use storage::context::{ContextApi, TezedgeContext};
 use storage::context_key;
 use tezos_messages::base::signature_public_key::SignaturePublicKey;
