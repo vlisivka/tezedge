@@ -1257,10 +1257,12 @@ depends_on:
 kind: pipeline
 name: tezos-python-tests
 
+clone:
+  disable: true
+
 steps:
 - name: mempool-test
   image: simplestakingcom/tezedge-ci-builder:python
-  pull: if-not-exists
   user: root
   volumes:
     - name: build
