@@ -358,6 +358,11 @@ pub(crate) fn get_node_version(network_version: &NetworkVersion) -> Result<NodeV
     Ok(NodeVersion::new(network_version))
 }
 
+// TODO: This requires further investigation, for now, just mock an empty vector for python tests' sake
+pub(crate) fn get_user_activated_upgrades(env: &RpcServiceEnvironment) -> Result<Vec<String>, failure::Error> {
+    Ok(vec![])
+}
+
 pub(crate) fn get_database_memstats(context: &TezedgeContext) -> Result<MerkleStorageStats, failure::Error> {
     let stats = context.get_merkle_stats()?;
 

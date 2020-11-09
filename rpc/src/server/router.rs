@@ -64,6 +64,8 @@ pub(crate) fn create_routes(is_sandbox: bool) -> PathTree<Handler> {
     routes.handle(Method::GET, "/stats/database_mem", dev_handler::database_memstats);
     //routes.handle(Method::GET, "/stats/storage", dev_handler::dev_stats_storage);
 
+    routes.handle(Method::GET, "config/network/user_activated_upgrades", shell_handler::config_user_activated_upgrades);
+
     // DEPRECATED in ocaml but still used by python tests
     routes.handle(Method::GET, "/network/version", shell_handler::node_version);
     
