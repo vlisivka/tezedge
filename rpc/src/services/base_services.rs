@@ -21,7 +21,7 @@ use tezos_context::channel::ContextAction;
 use tezos_messages::p2p::encoding::version::NetworkVersion;
 use tezos_messages::protocol::{RpcJsonMap, UniversalValue};
 
-use crate::helpers::{BlockHeaderInfo, BlockHeaderShellInfo, FullBlockInfo, get_action_types, get_block_hash_by_block_id, get_context_protocol_params, get_level_by_block_id, MonitorHeadStream, NodeVersion, PagedResult, Protocols};
+use crate::helpers::{BlockHeaderInfo, BlockHeaderShellInfo, BlockMetadata, FullBlockInfo, get_action_types, get_block_hash_by_block_id, get_context_protocol_params, get_level_by_block_id, MonitorHeadStream, NodeVersion, PagedResult, Protocols};
 use crate::rpc_actor::RpcCollectedStateRef;
 use crate::server::RpcServiceEnvironment;
 
@@ -132,6 +132,16 @@ pub(crate) fn get_current_head_monitor_header(state: &RpcCollectedStateRef) -> R
     }))
 }
 
+/// Get information about current head
+pub(crate) fn get_current_head_metadata(state: &RpcCollectedStateRef) -> Result<Option<BlockMetadata>, failure::Error> {
+    let state = state.read().unwrap();
+    let current_head = state.current_head().as_ref().map(|current_head| {
+        let chain_id = chain_id_to_b58_string(state.chain_id());
+        FullBlockInfo::new(current_head, &chain_id)
+    });
+
+    Ok(Some(current_head.unwrap().metadata))
+}
 
 /// Get information about block
 pub(crate) fn get_full_block(block_id: &str, env: &RpcServiceEnvironment) -> Result<Option<FullBlockInfo>, failure::Error> {
@@ -139,6 +149,12 @@ pub(crate) fn get_full_block(block_id: &str, env: &RpcServiceEnvironment) -> Res
     let state = env.state();
     let block = get_block_by_block_id(block_id, persistent_storage, state)?;
     Ok(block)
+}
+
+/// Get block metadata
+pub(crate) fn get_block_metadata(block_id: &str, env: &RpcServiceEnvironment) -> Result<Option<BlockMetadata>, failure::Error> {
+    let block = get_full_block(block_id, env)?.unwrap();
+    Ok(Some(block.metadata))
 }
 
 /// Get information about block header

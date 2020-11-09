@@ -37,13 +37,15 @@ macro_rules! merge_slices {
     }}
 }
 
+pub type BlockMetadata = HashMap<String, Value>;
+
 /// Object containing information to recreate the full block information
 #[derive(Serialize, Debug, Clone)]
 pub struct FullBlockInfo {
     pub hash: String,
     pub chain_id: String,
     pub header: InnerBlockHeader,
-    pub metadata: HashMap<String, Value>,
+    pub metadata: BlockMetadata,
     pub operations: Vec<Vec<HashMap<String, Value>>>,
 }
 
