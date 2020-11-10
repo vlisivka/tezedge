@@ -67,11 +67,12 @@ pub async fn valid_blocks(_: Request<Body>, _: Params, _: Query, _: RpcServiceEn
     empty()
 }
 
-pub async fn head_chain(_: Request<Body>, params: Params, _: Query, env: RpcServiceEnvironment) -> ServiceResult {
+pub async fn head_chain(_: Request<Body>, params: Params, query: Query, env: RpcServiceEnvironment) -> ServiceResult {
     let chain_id = params.get_str("chain_id").unwrap();
+    let protocol = query.get_str("next_protocol");
 
     if chain_id == "main" {
-        make_json_stream_response(base_services::get_current_head_monitor_header(env.state())?.unwrap())
+        make_json_stream_response(base_services::get_current_head_monitor_header(env.state(), protocol.map(|s| s.to_string()))?.unwrap())
     } else {
         // TODO: implement...
         empty()

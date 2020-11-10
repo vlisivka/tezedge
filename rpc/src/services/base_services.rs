@@ -123,11 +123,12 @@ pub(crate) fn get_current_head_shell_header(state: &RpcCollectedStateRef) -> Res
 }
 
 /// Get information about current head monitor header as a stream of Json strings
-pub(crate) fn get_current_head_monitor_header(state: &RpcCollectedStateRef) -> Result<Option<MonitorHeadStream>, failure::Error> {
+pub(crate) fn get_current_head_monitor_header(state: &RpcCollectedStateRef, protocol: Option<String>) -> Result<Option<MonitorHeadStream>, failure::Error> {
 
     // create and return the a new stream on rpc call 
     Ok(Some(MonitorHeadStream {
         state: state.clone(),
+        protocol: protocol.clone(),
         last_polled_timestamp: None,
     }))
 }

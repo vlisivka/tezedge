@@ -129,6 +129,7 @@ pub struct BlockHeaderMonitorInfo {
 pub struct MonitorHeadStream {
     pub state: RpcCollectedStateRef,
     pub last_polled_timestamp: Option<TimeStamp>,
+    pub protocol: Option<String>,
 }
 
 impl Stream for MonitorHeadStream {
@@ -154,13 +155,28 @@ impl Stream for MonitorHeadStream {
         if let Some(TimeStamp::Integral(poll_time)) = self.last_polled_timestamp {
             if poll_time < last_update {
                 // get the desired structure of the
-                let current_head = current_head.as_ref().map(|current_head| {
+                let current_head_header = current_head.as_ref().map(|current_head| {
                     let chain_id = chain_id_to_b58_string(&chain_id);
                     BlockHeaderInfo::new(current_head, &chain_id).to_monitor_header(current_head)
                 });
 
+                if let Some(protocol) = &self.protocol {
+                    let block_info = current_head.as_ref().map(|current_head| {
+                        let chain_id = chain_id_to_b58_string(&chain_id);
+                        FullBlockInfo::new(current_head, &chain_id)
+                    });
+                    let block_next_protocol = if let Some(block_info) = block_info {
+                        block_info.metadata["next_protocol"].to_string().replace("\"", "")
+                    } else {
+                        return Poll::Ready(None)
+                    };
+                    if &block_next_protocol != protocol {
+                        return Poll::Ready(None)
+                    }
+                }
+
                 // serialize the struct to a json string to yield by the stream
-                let mut head_string = serde_json::to_string(&current_head.unwrap())?;
+                let mut head_string = serde_json::to_string(&current_head_header.unwrap())?;
 
                 // push a newline character to the stream to imrove readability
                 head_string.push('\n');
