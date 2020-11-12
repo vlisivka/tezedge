@@ -27,6 +27,7 @@ pub(crate) fn create_routes(is_sandbox: bool) -> PathTree<Handler> {
     routes.handle(Method::GET, "/chains/:chain_id/blocks/:block_id/header", shell_handler::chains_block_id_header);
     routes.handle(Method::GET, "/chains/:chain_id/blocks/:block_id/header/shell", shell_handler::chains_block_id_header_shell);
     routes.handle(Method::GET, "/chains/:chain_id/mempool/pending_operations", shell_handler::mempool_pending_operations);
+    routes.handle(Method::GET, "/chains/:chain_id/mempool/monitor_operations", shell_handler::mempool_monitor_operations);
     routes.handle(Method::GET, "/chains/:chain_id/blocks/:block_id/protocols", shell_handler::get_block_protocols);
     routes.handle(Method::GET, "/chains/:chain_id/blocks/:block_id/hash", shell_handler::get_block_hash);
     routes.handle(Method::GET, "/chains/:chain_id/blocks/:block_id/operation_hashes", shell_handler::get_block_operation_hashes);

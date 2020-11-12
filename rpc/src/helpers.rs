@@ -4,19 +4,22 @@
 use std::{collections::HashMap, convert::TryFrom};
 use std::convert::TryInto;
 use std::pin::Pin;
-use std::{time, thread};
 
 use chrono::Utc;
 use failure::{bail, Fail};
 use futures::Stream;
 use futures::task::{Context, Poll};
+use std::future::Future;
 use hyper::{Body, Request};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use slog::Logger;
+use tokio::time::{Delay, delay_until};
+use tokio::time::{Duration, Instant};
 
 use crypto::hash::{BlockHash, chain_id_to_b58_string, HashType, ProtocolHash};
-use shell::shell_channel::BlockApplied;
 use storage::{BlockMetaStorage, BlockStorage, BlockStorageReader, context_key};
+use shell::shell_channel::BlockApplied;
 use storage::context::{ContextApi, TezedgeContext};
 use storage::context_action_storage::ContextActionType;
 use storage::persistent::PersistentStorage;
@@ -26,6 +29,7 @@ use tezos_messages::ts_to_rfc3339;
 
 use crate::encoding::base_types::{TimeStamp, UniString};
 use crate::rpc_actor::RpcCollectedStateRef;
+use crate::services::mempool_services::get_pending_operations;
 
 #[macro_export]
 macro_rules! merge_slices {
@@ -127,14 +131,33 @@ pub struct BlockHeaderMonitorInfo {
     pub protocol_data: String,
 }
 
+pub enum MonitorRpc {
+    MempoolOperations,
+    Head,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct MempoolOperationsQuery {
+    pub applied: bool,
+    pub refused: bool,
+    pub branch_delayed: bool,
+    pub branch_refused: bool,
+}
+
 pub struct MonitorHeadStream {
     pub state: RpcCollectedStateRef,
     pub last_polled_timestamp: Option<TimeStamp>,
     pub protocol: Option<String>,
+    pub rpc_type: MonitorRpc,
+    pub last_checked_head: Option<BlockHash>,
+    pub streamed_operations: Option<Vec<Value>>,
+    pub log: Logger,
+    pub query: Option<MempoolOperationsQuery>,
+    pub delay: Option<Delay>,
 }
 
 impl MonitorHeadStream {
-    fn yield_head(&self, current_head: Option<BlockApplied>, chain_id: Vec<u8>, ) -> Result<Option<String>, serde_json::Error> {
+    fn yield_head(&self, current_head: Option<BlockApplied>, chain_id: Vec<u8>) -> Result<Option<String>, serde_json::Error> {
         // get the desired structure of the
         let current_head_header = current_head.as_ref().map(|current_head| {
             let chain_id = chain_id_to_b58_string(&chain_id);
@@ -164,6 +187,68 @@ impl MonitorHeadStream {
 
         Ok(Some(head_string))
     }
+
+    fn yield_operations(&mut self) -> Poll<Option<Result<String, serde_json::Error>>> {
+        let pending_operations = if let Ok(ops) = get_pending_operations(&self.state, &self.log) {
+            ops
+        } else {
+            return Poll::Ready(None)
+        };
+        let mut requested_ops: Vec<Value> = vec![];
+
+        // no querry means all ops
+        let query = if let Some(q) = self.query {
+            q
+        } else {
+            MempoolOperationsQuery{
+                applied: true,
+                refused: true,
+                branch_delayed: true,
+                branch_refused :true,
+            }
+        };
+
+        // fill in the resulting vector according to the querry
+        if query.applied {
+            let mut applied: Vec<_> = pending_operations.applied.into_iter()
+                .flatten()
+                .map(|(_, v)| v)
+                .collect();
+            requested_ops.append(&mut applied);
+        }
+        if query.branch_delayed {
+            let mut branch_delayed: Vec<_> = pending_operations.branch_delayed.clone();
+            requested_ops.append(&mut branch_delayed);
+        }
+        if query.branch_refused {
+            let mut branch_refused: Vec<_> = pending_operations.branch_refused.clone();
+            requested_ops.append(&mut branch_refused);
+        }
+        if query.refused {
+            let mut refused: Vec<_> = pending_operations.refused.clone();
+            requested_ops.append(&mut refused);
+        }
+
+        if let Some(streamed_operations) = &mut self.streamed_operations {
+            println!("{} vs {}", streamed_operations.len(), requested_ops.len());
+            if streamed_operations.len() == requested_ops.len() {
+                println!("Same, sleep");
+                //thread::sleep(time::Duration::from_secs(WAIT_INTERVAL_SECS));
+                Poll::Pending
+            } else {
+                let mut string_json_representation = serde_json::to_string(&requested_ops)?;
+                string_json_representation.push('\n');
+                println!("Yielding: {:?}", string_json_representation);
+                self.streamed_operations = Some(requested_ops.clone());
+                Poll::Ready(Some(Ok(string_json_representation)))
+            }
+        } else {
+            self.streamed_operations = Some(requested_ops.clone());
+            let mut string_json_representation = serde_json::to_string(&requested_ops)?;
+            string_json_representation.push('\n');
+            Poll::Ready(Some(Ok(string_json_representation)))
+        }
+    }
 }
 
 impl Stream for MonitorHeadStream {
@@ -171,40 +256,88 @@ impl Stream for MonitorHeadStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<String, serde_json::Error>>> {
         // Note: the stream only ends on the client dropping the connection
+        let delay = self.delay.get_or_insert_with(|| {
+            let when = Instant::now() + Duration::from_millis(1000);
+            delay_until(when)
+        });
 
-        let state = self.state.read().unwrap();
-        let last_update = if let TimeStamp::Integral(timestamp) = state.head_update_time() {
-            *timestamp
-        } else {
-            i64::MAX
-        };
-        let current_head = state.current_head().clone();
-        let chain_id = state.chain_id().clone();
+        let mut pinned = std::boxed::Box::pin(delay);
+        let pinne_mut = pinned.as_mut();
 
-        // drop the immutable borrow so we can borrow self again as mutable
-        // TODO: refactor this drop (remove if possible)
-        drop(state);
+        match pinne_mut.poll(cx) {
+            Poll::Pending => {
+                return Poll::Pending
+            },
+            _ => {
+                self.delay = None;
+                let state = self.state.read().unwrap();
+                let last_update = if let TimeStamp::Integral(timestamp) = state.head_update_time() {
+                    *timestamp
+                } else {
+                    i64::MAX
+                };
+                let current_head = state.current_head().clone();
+                let chain_id = state.chain_id().clone();
 
-        if let Some(TimeStamp::Integral(poll_time)) = self.last_polled_timestamp {
-            println!("Last update: {}, Last Poll: {}", last_update, poll_time);
-            if poll_time <= last_update {
+                let last_checked_head = if let Some(head_hash) = &self.last_checked_head {
+                    head_hash
+                } else {
+                    return Poll::Ready(None)
+                };
+
+                // drop the immutable borrow so we can borrow self again as mutable
+                // TODO: refactor this drop (remove if possible)
+                drop(state);
+
+                match self.rpc_type {
+                    MonitorRpc::Head => {
+                        if let Some(TimeStamp::Integral(poll_time)) = self.last_polled_timestamp {
+                            println!("Last update: {}, Last Poll: {}", last_update, poll_time);
+                            if poll_time <= last_update {
+                                
+                                let head_string_result = self.yield_head(current_head, chain_id);
                 
-                let head_string_result = self.yield_head(current_head, chain_id);
-
-                self.last_polled_timestamp = Some(current_time_timestamp());
-                return Poll::Ready(head_string_result.transpose());
-            } else {
-                self.last_polled_timestamp = Some(current_time_timestamp());
-                thread::sleep(time::Duration::from_secs(1));
-                cx.waker().wake_by_ref();
-                return Poll::Pending;
+                                self.last_polled_timestamp = Some(current_time_timestamp());
+                                return Poll::Ready(head_string_result.transpose())
+                            } else {
+                                self.last_polled_timestamp = Some(current_time_timestamp());
+                                cx.waker().wake_by_ref();
+                                return Poll::Pending
+                            }
+                        } else {
+                            let head_string_result = self.yield_head(current_head, chain_id);
+                
+                            self.last_polled_timestamp = Some(current_time_timestamp());
+                            return Poll::Ready(head_string_result.transpose());
+                        }
+                    },
+                    MonitorRpc::MempoolOperations => {
+                        println!("Mempool monitor poll");
+                        if let Some(current_head) = current_head {
+                            if last_checked_head == &current_head.header().hash {
+                                println!("Head same, try yielding");
+                                let yielded = self.yield_operations();
+                                match yielded {
+                                    Poll::Pending => {
+                                        cx.waker().wake_by_ref();
+                                        return Poll::Pending
+                                    },
+                                    _ => {
+                                        return yielded
+                                    },
+                                }
+                            } else {
+                                println!("Head changed");
+                                return Poll::Ready(None)
+                            }
+                        } else {
+                            println!("No current head found");
+                            return Poll::Ready(None)
+                        }
+                    }
+                }
             }
-        } else {
-            let head_string_result = self.yield_head(current_head, chain_id);
-
-            self.last_polled_timestamp = Some(current_time_timestamp());
-            return Poll::Ready(head_string_result.transpose());
-        }
+        };
     }
 }
 

@@ -24,7 +24,7 @@ use crate::{
     ServiceResult,
     services,
 };
-use crate::helpers::create_rpc_request;
+use crate::helpers::{MempoolOperationsQuery, create_rpc_request};
 use crate::server::{HasSingleValue, HResult, Params, Query, RpcServiceEnvironment};
 use crate::services::base_services;
 
@@ -72,7 +72,30 @@ pub async fn head_chain(_: Request<Body>, params: Params, query: Query, env: Rpc
     let protocol = query.get_str("next_protocol");
 
     if chain_id == "main" {
-        make_json_stream_response(base_services::get_current_head_monitor_header(env.state(), protocol.map(|s| s.to_string()))?.unwrap())
+        make_json_stream_response(base_services::get_current_head_monitor_header(&env, protocol.map(|s| s.to_string()))?.unwrap())
+    } else {
+        // TODO: implement... 
+        empty()
+    }
+}
+
+pub async fn mempool_monitor_operations(_: Request<Body>, params: Params, query: Query, env: RpcServiceEnvironment) -> ServiceResult {
+    let chain_id = params.get_str("chain_id").unwrap();
+
+    let applied = query.get_str("applied");
+    let branch_refused = query.get_str("branch_refused");
+    let branch_delayed = query.get_str("branch_delayed");
+    let refused = query.get_str("refused");
+
+    let mempool_query = MempoolOperationsQuery{
+        applied: applied == Some("yes"),
+        branch_refused: branch_refused == Some("yes"),
+        branch_delayed: branch_delayed == Some("yes"),
+        refused: refused == Some("yes"),
+    };
+
+    if chain_id == "main" {
+        make_json_stream_response(base_services::get_operations_monitor(&env, Some(mempool_query))?.unwrap())
     } else {
         // TODO: implement...
         empty()
