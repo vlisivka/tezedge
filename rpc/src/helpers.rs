@@ -4,6 +4,7 @@
 use std::{collections::HashMap, convert::TryFrom};
 use std::convert::TryInto;
 use std::pin::Pin;
+use std::{time, thread};
 
 use chrono::Utc;
 use failure::{bail, Fail};
@@ -132,6 +133,39 @@ pub struct MonitorHeadStream {
     pub protocol: Option<String>,
 }
 
+impl MonitorHeadStream {
+    fn yield_head(&self, current_head: Option<BlockApplied>, chain_id: Vec<u8>, ) -> Result<Option<String>, serde_json::Error> {
+        // get the desired structure of the
+        let current_head_header = current_head.as_ref().map(|current_head| {
+            let chain_id = chain_id_to_b58_string(&chain_id);
+            BlockHeaderInfo::new(current_head, &chain_id).to_monitor_header(current_head)
+        });
+
+        if let Some(protocol) = &self.protocol {
+            let block_info = current_head.as_ref().map(|current_head| {
+                let chain_id = chain_id_to_b58_string(&chain_id);
+                FullBlockInfo::new(current_head, &chain_id)
+            });
+            let block_next_protocol = if let Some(block_info) = block_info {
+                block_info.metadata["next_protocol"].to_string().replace("\"", "")
+            } else {
+                return Ok(None)
+            };
+            if &block_next_protocol != protocol {
+                return Ok(None)
+            }
+        }
+
+        // serialize the struct to a json string to yield by the stream
+        let mut head_string = serde_json::to_string(&current_head_header.unwrap())?;
+
+        // push a newline character to the stream to imrove readability
+        head_string.push('\n');
+
+        Ok(Some(head_string))
+    }
+}
+
 impl Stream for MonitorHeadStream {
     type Item = Result<String, serde_json::Error>;
 
@@ -142,8 +176,7 @@ impl Stream for MonitorHeadStream {
         let last_update = if let TimeStamp::Integral(timestamp) = state.head_update_time() {
             *timestamp
         } else {
-            cx.waker().wake_by_ref();
-            return Poll::Pending;
+            i64::MAX
         };
         let current_head = state.current_head().clone();
         let chain_id = state.chain_id().clone();
@@ -153,47 +186,24 @@ impl Stream for MonitorHeadStream {
         drop(state);
 
         if let Some(TimeStamp::Integral(poll_time)) = self.last_polled_timestamp {
-            if poll_time < last_update {
-                // get the desired structure of the
-                let current_head_header = current_head.as_ref().map(|current_head| {
-                    let chain_id = chain_id_to_b58_string(&chain_id);
-                    BlockHeaderInfo::new(current_head, &chain_id).to_monitor_header(current_head)
-                });
-
-                if let Some(protocol) = &self.protocol {
-                    let block_info = current_head.as_ref().map(|current_head| {
-                        let chain_id = chain_id_to_b58_string(&chain_id);
-                        FullBlockInfo::new(current_head, &chain_id)
-                    });
-                    let block_next_protocol = if let Some(block_info) = block_info {
-                        block_info.metadata["next_protocol"].to_string().replace("\"", "")
-                    } else {
-                        return Poll::Ready(None)
-                    };
-                    if &block_next_protocol != protocol {
-                        return Poll::Ready(None)
-                    }
-                }
-
-                // serialize the struct to a json string to yield by the stream
-                let mut head_string = serde_json::to_string(&current_head_header.unwrap())?;
-
-                // push a newline character to the stream to imrove readability
-                head_string.push('\n');
+            println!("Last update: {}, Last Poll: {}", last_update, poll_time);
+            if poll_time <= last_update {
+                
+                let head_string_result = self.yield_head(current_head, chain_id);
 
                 self.last_polled_timestamp = Some(current_time_timestamp());
-
-                // yield the serialized json
-                return Poll::Ready(Some(Ok(head_string)));
+                return Poll::Ready(head_string_result.transpose());
             } else {
+                self.last_polled_timestamp = Some(current_time_timestamp());
+                thread::sleep(time::Duration::from_secs(1));
                 cx.waker().wake_by_ref();
                 return Poll::Pending;
             }
         } else {
-            self.last_polled_timestamp = Some(current_time_timestamp());
+            let head_string_result = self.yield_head(current_head, chain_id);
 
-            cx.waker().wake_by_ref();
-            Poll::Pending
+            self.last_polled_timestamp = Some(current_time_timestamp());
+            return Poll::Ready(head_string_result.transpose());
         }
     }
 }
