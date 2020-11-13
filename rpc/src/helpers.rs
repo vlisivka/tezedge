@@ -1,7 +1,7 @@
 // Copyright (c) SimpleStaking and Tezedge Contributors
 // SPDX-License-Identifier: MIT
 
-use std::{collections::HashMap, convert::TryFrom};
+use std::{collections::HashMap, HashSet, convert::TryFrom};
 use std::convert::TryInto;
 use std::pin::Pin;
 
@@ -43,6 +43,7 @@ macro_rules! merge_slices {
 }
 
 pub type BlockMetadata = HashMap<String, Value>;
+pub const MONITOR_TIMER_MILIS: u64 = 1000;
 
 /// Object containing information to recreate the full block information
 #[derive(Serialize, Debug, Clone)]
@@ -150,7 +151,7 @@ pub struct MonitorHeadStream {
     pub protocol: Option<String>,
     pub rpc_type: MonitorRpc,
     pub last_checked_head: Option<BlockHash>,
-    pub streamed_operations: Option<Vec<Value>>,
+    pub streamed_operations: Option<HashSet<String>>,
     pub log: Logger,
     pub query: Option<MempoolOperationsQuery>,
     pub delay: Option<Delay>,
@@ -194,7 +195,7 @@ impl MonitorHeadStream {
         } else {
             return Poll::Ready(None)
         };
-        let mut requested_ops: Vec<Value> = vec![];
+        let mut requested_ops: HashMap<String, String> = HashMap::new();
 
         // no querry means all ops
         let query = if let Some(q) = self.query {
@@ -210,43 +211,60 @@ impl MonitorHeadStream {
 
         // fill in the resulting vector according to the querry
         if query.applied {
-            let mut applied: Vec<_> = pending_operations.applied.into_iter()
-                .flatten()
-                .map(|(_, v)| v)
+            let applied: HashMap<_, _> = pending_operations.applied.into_iter()
+                .map(|v| (v["hash"].to_string(), serde_json::to_string(&v).unwrap()))
                 .collect();
-            requested_ops.append(&mut applied);
+            requested_ops.extend(applied);
         }
         if query.branch_delayed {
-            let mut branch_delayed: Vec<_> = pending_operations.branch_delayed.clone();
-            requested_ops.append(&mut branch_delayed);
+            let branch_delayed: HashMap<_, _> = pending_operations.branch_delayed.into_iter()
+                .map(|v| (v["hash"].to_string(), serde_json::to_string(&v).unwrap()))
+                .collect();
+            requested_ops.extend(branch_delayed);
         }
         if query.branch_refused {
-            let mut branch_refused: Vec<_> = pending_operations.branch_refused.clone();
-            requested_ops.append(&mut branch_refused);
+            let branch_refused: HashMap<_, _> = pending_operations.branch_refused.into_iter()
+                .map(|v| (v["hash"].to_string(), serde_json::to_string(&v).unwrap()))
+                .collect();
+            requested_ops.extend(branch_refused);
         }
         if query.refused {
-            let mut refused: Vec<_> = pending_operations.refused.clone();
-            requested_ops.append(&mut refused);
+            let refused: HashMap<_, _> = pending_operations.refused.into_iter()
+                .map(|v| (v["hash"].to_string(), serde_json::to_string(&v).unwrap()))
+                .collect();
+            requested_ops.extend(refused);
         }
 
         if let Some(streamed_operations) = &mut self.streamed_operations {
-            println!("{} vs {}", streamed_operations.len(), requested_ops.len());
-            if streamed_operations.len() == requested_ops.len() {
-                println!("Same, sleep");
-                //thread::sleep(time::Duration::from_secs(WAIT_INTERVAL_SECS));
+            let to_yield: Vec<String> = requested_ops.clone().into_iter()
+                .filter(|(k, _)| !streamed_operations.contains(k))
+                .map(|(_, v)| v)
+                .collect();
+
+            for op_hash in requested_ops.keys() {
+                streamed_operations.insert(op_hash.to_string());
+            }
+
+            if to_yield.is_empty() {
                 Poll::Pending
             } else {
-                let mut string_json_representation = serde_json::to_string(&requested_ops)?;
-                string_json_representation.push('\n');
-                println!("Yielding: {:?}", string_json_representation);
-                self.streamed_operations = Some(requested_ops.clone());
-                Poll::Ready(Some(Ok(string_json_representation)))
+                let mut to_yield_string = serde_json::to_string(&to_yield)?;
+                to_yield_string.push('\n');
+                Poll::Ready(Some(Ok(to_yield_string)))
             }
         } else {
-            self.streamed_operations = Some(requested_ops.clone());
-            let mut string_json_representation = serde_json::to_string(&requested_ops)?;
-            string_json_representation.push('\n');
-            Poll::Ready(Some(Ok(string_json_representation)))
+            let mut streamed_operations = HashSet::<String>::new();
+            let to_yield: Vec<String> = requested_ops.into_iter()
+                .map(|(k, v)| {
+                    streamed_operations.insert(k);
+                    v
+                })
+                .collect();
+
+            self.streamed_operations = Some(streamed_operations);
+            let mut to_yield_string = serde_json::to_string(&to_yield)?;
+            to_yield_string.push('\n');
+            Poll::Ready(Some(Ok(to_yield_string)))
         }
     }
 }
@@ -256,20 +274,26 @@ impl Stream for MonitorHeadStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<String, serde_json::Error>>> {
         // Note: the stream only ends on the client dropping the connection
+
+        // create or get a delay future, that blocks for MONITOR_TIMER_MILIS
         let delay = self.delay.get_or_insert_with(|| {
-            let when = Instant::now() + Duration::from_millis(1000);
+            let when = Instant::now() + Duration::from_millis(MONITOR_TIMER_MILIS);
             delay_until(when)
         });
 
+        // pin the future pointer
         let mut pinned = std::boxed::Box::pin(delay);
         let pinne_mut = pinned.as_mut();
 
+        // poll the delay future
         match pinne_mut.poll(cx) {
             Poll::Pending => {
                 return Poll::Pending
             },
             _ => {
+                // get rid of the used delay
                 self.delay = None;
+
                 let state = self.state.read().unwrap();
                 let last_update = if let TimeStamp::Integral(timestamp) = state.head_update_time() {
                     *timestamp
@@ -289,6 +313,7 @@ impl Stream for MonitorHeadStream {
                 // TODO: refactor this drop (remove if possible)
                 drop(state);
 
+                // match the monitor rpc type
                 match self.rpc_type {
                     MonitorRpc::Head => {
                         if let Some(TimeStamp::Integral(poll_time)) = self.last_polled_timestamp {
@@ -315,6 +340,7 @@ impl Stream for MonitorHeadStream {
                         println!("Mempool monitor poll");
                         if let Some(current_head) = current_head {
                             if last_checked_head == &current_head.header().hash {
+                                // current head not changed, check for new operations
                                 println!("Head same, try yielding");
                                 let yielded = self.yield_operations();
                                 match yielded {
@@ -327,10 +353,12 @@ impl Stream for MonitorHeadStream {
                                     },
                                 }
                             } else {
+                                // Head change, end stream
                                 println!("Head changed");
                                 return Poll::Ready(None)
                             }
                         } else {
+                            // No head current found, storage not ready yet 
                             println!("No current head found");
                             return Poll::Ready(None)
                         }
