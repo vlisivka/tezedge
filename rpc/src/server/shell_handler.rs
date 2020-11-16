@@ -304,7 +304,7 @@ pub async fn node_version(_: Request<Body>, _: Params, _: Query, env: RpcService
     )
 }
 
-pub async fn config_user_activated_upgrades(_: Request<Body>, params: Params, _: Query, env: RpcServiceEnvironment) -> ServiceResult {
+pub async fn config_user_activated_upgrades(_: Request<Body>, _: Params, _: Query, env: RpcServiceEnvironment) -> ServiceResult {
     result_to_json_response(
         services::base_services::get_user_activated_upgrades(&env),
         env.log(),
