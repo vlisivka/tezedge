@@ -97,7 +97,25 @@ pub async fn mempool_monitor_operations(_: Request<Body>, params: Params, query:
     if chain_id == "main" {
         make_json_stream_response(base_services::get_operations_monitor(&env, Some(mempool_query))?.unwrap())
     } else {
-        // TODO: implement...
+        // TODO: implement... 
+        //empty()
+        make_json_stream_response(base_services::get_operations_monitor(&env, Some(mempool_query))?.unwrap())
+    }
+}
+
+pub async fn blocks(_: Request<Body>, params: Params, query: Query, env: RpcServiceEnvironment) -> ServiceResult {
+    let chain_id = params.get_str("chain_id").unwrap();
+    let length = query.get_str("length").unwrap_or("0");
+    let head = query.get_str("head").unwrap();
+    // TODO: implement min_date query arg
+
+    // TODO: This can be implemented in a more optimised and cleaner way
+    // Note: Need to investigate the "more heads per level" variant
+    if chain_id == "main" {
+        make_json_response(&vec![base_services::get_blocks(None, head, length.parse::<usize>()?, env.persistent_storage(), env.state())?.iter()
+            .map(|block| block.hash.clone())
+            .collect::<Vec<String>>()])
+    } else {
         empty()
     }
 }

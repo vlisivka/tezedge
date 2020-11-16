@@ -29,7 +29,7 @@ use tezos_messages::ts_to_rfc3339;
 
 use crate::encoding::base_types::{TimeStamp, UniString};
 use crate::rpc_actor::RpcCollectedStateRef;
-use crate::services::mempool_services::get_pending_operations;
+use crate::services::mempool_services::{MempoolOperations, get_pending_operations};
 
 #[macro_export]
 macro_rules! merge_slices {
@@ -145,6 +145,18 @@ pub struct MempoolOperationsQuery {
     pub branch_refused: bool,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MonitoredOperation {
+    pub signature: String,
+    pub branch: String,
+    pub contents: Value,
+
+    #[serde(skip_deserializing)]
+    pub protocol: Option<String>,
+    #[serde(skip_serializing)]
+    pub hash: String,
+}
+
 pub struct MonitorHeadStream {
     pub state: RpcCollectedStateRef,
     pub last_polled_timestamp: Option<TimeStamp>,
@@ -195,7 +207,7 @@ impl MonitorHeadStream {
         } else {
             return Poll::Ready(None)
         };
-        let mut requested_ops: HashMap<String, String> = HashMap::new();
+        let mut requested_ops: HashMap<String, Value> = HashMap::new();
 
         // no querry means all ops
         let query = if let Some(q) = self.query {
@@ -212,33 +224,37 @@ impl MonitorHeadStream {
         // fill in the resulting vector according to the querry
         if query.applied {
             let applied: HashMap<_, _> = pending_operations.applied.into_iter()
-                .map(|v| (v["hash"].to_string(), serde_json::to_string(&v).unwrap()))
+                .map(|v| (v["hash"].to_string(), serde_json::to_value(v).unwrap()))
                 .collect();
             requested_ops.extend(applied);
         }
         if query.branch_delayed {
             let branch_delayed: HashMap<_, _> = pending_operations.branch_delayed.into_iter()
-                .map(|v| (v["hash"].to_string(), serde_json::to_string(&v).unwrap()))
+                .map(|v| (v["hash"].to_string(), v))
                 .collect();
             requested_ops.extend(branch_delayed);
         }
         if query.branch_refused {
             let branch_refused: HashMap<_, _> = pending_operations.branch_refused.into_iter()
-                .map(|v| (v["hash"].to_string(), serde_json::to_string(&v).unwrap()))
+                .map(|v| (v["hash"].to_string(), v))
                 .collect();
             requested_ops.extend(branch_refused);
         }
         if query.refused {
             let refused: HashMap<_, _> = pending_operations.refused.into_iter()
-                .map(|v| (v["hash"].to_string(), serde_json::to_string(&v).unwrap()))
+                .map(|v| (v["hash"].to_string(), v))
                 .collect();
             requested_ops.extend(refused);
         }
 
         if let Some(streamed_operations) = &mut self.streamed_operations {
-            let to_yield: Vec<String> = requested_ops.clone().into_iter()
+            let to_yield: Vec<MonitoredOperation> = requested_ops.clone().into_iter()
                 .filter(|(k, _)| !streamed_operations.contains(k))
-                .map(|(_, v)| v)
+                .map(|(_, v)| {
+                    let mut monitor_op: MonitoredOperation = serde_json::from_value(v).unwrap();
+                    monitor_op.protocol = Some("PsCARTHAGazKbHtnKfLzQg3kms52kSRpgnDY982a9oYsSXRLQEb".to_string());
+                    monitor_op
+                })
                 .collect();
 
             for op_hash in requested_ops.keys() {
@@ -249,20 +265,24 @@ impl MonitorHeadStream {
                 Poll::Pending
             } else {
                 let mut to_yield_string = serde_json::to_string(&to_yield)?;
+                to_yield_string = to_yield_string.replace("\\", "");
                 to_yield_string.push('\n');
                 Poll::Ready(Some(Ok(to_yield_string)))
             }
         } else {
             let mut streamed_operations = HashSet::<String>::new();
-            let to_yield: Vec<String> = requested_ops.into_iter()
+            let to_yield: Vec<MonitoredOperation> = requested_ops.into_iter()
                 .map(|(k, v)| {
                     streamed_operations.insert(k);
-                    v
+                    let mut monitor_op: MonitoredOperation = serde_json::from_value(v).unwrap();
+                    monitor_op.protocol = Some("PsCARTHAGazKbHtnKfLzQg3kms52kSRpgnDY982a9oYsSXRLQEb".to_string());
+                    monitor_op
                 })
                 .collect();
 
             self.streamed_operations = Some(streamed_operations);
             let mut to_yield_string = serde_json::to_string(&to_yield)?;
+            to_yield_string = to_yield_string.replace("\\", "");
             to_yield_string.push('\n');
             Poll::Ready(Some(Ok(to_yield_string)))
         }
