@@ -22,6 +22,7 @@ use riker::actors::*;
 use slog::{debug, error, info, Logger, trace, warn};
 
 use crypto::hash::{BlockHash, ChainId, CryptoboxPublicKeyHash, HashType, OperationHash};
+use crypto::seeded_step::Seed;
 use networking::p2p::network_channel::{NetworkChannelMsg, NetworkChannelRef, PeerBootstrapped};
 use networking::p2p::peer::{PeerRef, PublicKey, SendMessage};
 use storage::{BlockHeaderWithHash, BlockMetaStorage, BlockMetaStorageReader, BlockStorage, BlockStorageReader, ChainMetaStorage, MempoolStorage, OperationsStorage, OperationsStorageReader, StorageError};
@@ -38,7 +39,7 @@ use tezos_wrapper::TezosApiConnectionPool;
 
 use crate::{PeerConnectionThreshold, validation};
 use crate::shell_channel::{AllBlockOperationsReceived, BlockReceived, CurrentMempoolState, MempoolOperationReceived, ShellChannelMsg, ShellChannelRef, ShellChannelTopic};
-use crate::state::block_state::{BlockchainState, HeadResult, MissingBlock, Seed};
+use crate::state::block_state::{BlockchainState, HeadResult, MissingBlock};
 use crate::state::operations_state::{MissingOperations, OperationsState};
 use crate::subscription::*;
 
