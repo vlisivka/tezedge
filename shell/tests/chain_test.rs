@@ -19,8 +19,7 @@ mod samples;
 lazy_static! {
     pub static ref NETWORK_VERSION: NetworkVersion = NetworkVersion::new("TEST_CHAIN".to_string(), 0, 0);
     pub static ref NODE_P2P_PORT: u16 = 1234; // TODO: maybe some logic to verify and get free port
-    pub static ref NODE_P2P_CFG: (Identity, P2p, NetworkVersion) = (
-        tezos_identity::Identity::generate(0f64),
+    pub static ref NODE_P2P_CFG: (P2p, NetworkVersion) = (
         P2p {
             listener_port: NODE_P2P_PORT.clone(),
             bootstrap_lookup_addresses: vec![],
@@ -32,6 +31,7 @@ lazy_static! {
         },
         NETWORK_VERSION.clone(),
     );
+    pub static ref NODE_IDENTITY: Identity = tezos_identity::Identity::generate(0f64);
 }
 
 #[ignore]
@@ -51,6 +51,7 @@ fn test_process_current_branch_on_level3_with_empty_storage() -> Result<(), fail
         &db.tezos_env,
         None,
         Some(NODE_P2P_CFG.clone()),
+        NODE_IDENTITY.clone(),
         (log, log_level),
     )?;
 
@@ -61,8 +62,8 @@ fn test_process_current_branch_on_level3_with_empty_storage() -> Result<(), fail
     let clocks = Instant::now();
     let mocked_peer_node = test_node_peer::TestNodePeer::connect(
         "TEST_PEER_NODE",
-        NODE_P2P_CFG.1.listener_port,
-        NODE_P2P_CFG.2.clone(),
+        NODE_P2P_CFG.0.listener_port,
+        NODE_P2P_CFG.1.clone(),
         tezos_identity::Identity::generate(0f64),
         node.log.clone(),
         &node.tokio_runtime,
@@ -106,6 +107,7 @@ fn test_process_reorg_with_different_current_branches_with_empty_storage() -> Re
         &tezos_env,
         patch_context,
         Some(NODE_P2P_CFG.clone()),
+        NODE_IDENTITY.clone(),
         (log, log_level),
     )?;
 
@@ -117,8 +119,8 @@ fn test_process_reorg_with_different_current_branches_with_empty_storage() -> Re
     let clocks = Instant::now();
     let mocked_peer_node_branch_1 = test_node_peer::TestNodePeer::connect(
         "TEST_PEER_NODE_BRANCH_1",
-        NODE_P2P_CFG.1.listener_port,
-        NODE_P2P_CFG.2.clone(),
+        NODE_P2P_CFG.0.listener_port,
+        NODE_P2P_CFG.1.clone(),
         tezos_identity::Identity::generate(0f64),
         node.log.clone(),
         &node.tokio_runtime,
@@ -136,8 +138,8 @@ fn test_process_reorg_with_different_current_branches_with_empty_storage() -> Re
     let (db_branch_2, ..) = test_cases_data::sandbox_branch_2_level4::init_data(&node.log);
     let mocked_peer_node_branch_2 = test_node_peer::TestNodePeer::connect(
         "TEST_PEER_NODE_BRANCH_2",
-        NODE_P2P_CFG.1.listener_port,
-        NODE_P2P_CFG.2.clone(),
+        NODE_P2P_CFG.0.listener_port,
+        NODE_P2P_CFG.1.clone(),
         tezos_identity::Identity::generate(0f64),
         node.log.clone(),
         &node.tokio_runtime,

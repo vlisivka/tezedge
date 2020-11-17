@@ -51,6 +51,7 @@ fn test_actors_apply_blocks_and_check_context_and_mempool() -> Result<(), failur
         &tezos_env,
         None,
         None,
+        tezos_identity::Identity::generate(0f64),
         (log, log_level),
     )?;
 

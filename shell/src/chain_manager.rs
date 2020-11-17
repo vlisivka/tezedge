@@ -19,16 +19,17 @@ use std::time::{Duration, Instant, SystemTime};
 use failure::{Error, format_err};
 use itertools::Itertools;
 use riker::actors::*;
-use slog::{debug, info, Logger, trace, warn};
+use slog::{debug, error, info, Logger, trace, warn};
 
-use crypto::hash::{BlockHash, ChainId, HashType, OperationHash};
+use crypto::hash::{BlockHash, ChainId, CryptoboxPublicKeyHash, HashType, OperationHash};
 use networking::p2p::network_channel::{NetworkChannelMsg, NetworkChannelRef, PeerBootstrapped};
-use networking::p2p::peer::{PeerRef, SendMessage};
+use networking::p2p::peer::{PeerRef, PublicKey, SendMessage};
 use storage::{BlockHeaderWithHash, BlockMetaStorage, BlockMetaStorageReader, BlockStorage, BlockStorageReader, ChainMetaStorage, MempoolStorage, OperationsStorage, OperationsStorageReader, StorageError};
 use storage::chain_meta_storage::ChainMetaStorageReader;
 use storage::mempool_storage::MempoolOperationType;
 use storage::persistent::PersistentStorage;
 use tezos_api::ffi::ApplyBlockRequest;
+use tezos_identity::Identity;
 use tezos_messages::Head;
 use tezos_messages::p2p::binary_message::MessageHash;
 use tezos_messages::p2p::encoding::block_header::Level;
@@ -37,7 +38,7 @@ use tezos_wrapper::TezosApiConnectionPool;
 
 use crate::{PeerConnectionThreshold, validation};
 use crate::shell_channel::{AllBlockOperationsReceived, BlockReceived, CurrentMempoolState, MempoolOperationReceived, ShellChannelMsg, ShellChannelRef, ShellChannelTopic};
-use crate::state::block_state::{BlockchainState, HeadResult, MissingBlock};
+use crate::state::block_state::{BlockchainState, HeadResult, MissingBlock, Seed};
 use crate::state::operations_state::{MissingOperations, OperationsState};
 use crate::subscription::*;
 
@@ -164,6 +165,10 @@ pub struct ChainManager {
     chain_state: BlockchainState,
     /// Holds state of the operations
     operations_state: OperationsState,
+
+    // Node's identity public key - e.g. used for history computation
+    identity_peer_id: CryptoboxPublicKeyHash,
+
     /// Current head information
     current_head: CurrentHead,
     // current last known mempool state
@@ -190,14 +195,15 @@ pub type ChainManagerRef = ActorRef<ChainManagerMsg>;
 impl ChainManager {
     /// Create new actor instance.
     pub fn actor(
-        sys: &impl ActorRefFactory,
+        sys: &ActorSystem,
         network_channel: NetworkChannelRef,
         shell_channel: ShellChannelRef,
         persistent_storage: &PersistentStorage,
         tezos_readonly_prevalidation_api: Arc<TezosApiConnectionPool>,
         chain_id: &ChainId,
         is_sandbox: bool,
-        peers_threshold: &PeerConnectionThreshold) -> Result<ChainManagerRef, CreateError> {
+        peers_threshold: &PeerConnectionThreshold,
+        identity: Arc<Identity>) -> Result<ChainManagerRef, CreateError> {
         sys.actor_of_props::<ChainManager>(
             ChainManager::name(),
             Props::new_args((
@@ -207,7 +213,12 @@ impl ChainManager {
                 tezos_readonly_prevalidation_api,
                 chain_id.clone(),
                 is_sandbox,
-                peers_threshold.num_of_peers_for_bootstrap_threshold()
+                peers_threshold.num_of_peers_for_bootstrap_threshold(),
+                HashType::CryptoboxPublicKeyHash.string_to_bytes(&identity.peer_id)
+                    .map_err(|e| {
+                        error!(sys.log(), "Failed to decode peer_id from identity"; "reason" => format!("{}", e));
+                        CreateError::Panicked
+                    })?,
             )),
         )
     }
@@ -338,27 +349,29 @@ impl ChainManager {
             stats,
             mempool_storage,
             current_head,
+            identity_peer_id,
             ..
         } = self;
 
         match msg {
-            NetworkChannelMsg::PeerBootstrapped(PeerBootstrapped::Success { peer, peer_metadata, .. }) => {
+            NetworkChannelMsg::PeerBootstrapped(PeerBootstrapped::Success { peer, peer_public_key, peer_metadata }) => {
                 let log = ctx.system.log().new(slog::o!("peer" => peer.name().to_string()));
 
-                debug!(log, "Requesting current branch");
-                let peer = PeerState::new(peer, peer_metadata);
+                let peer = PeerState::new(peer, peer_public_key, peer_metadata);
                 // store peer
                 let actor_uri = peer.peer_ref.uri().clone();
                 self.peers.insert(actor_uri.clone(), peer);
                 // retrieve mutable reference and use it as `tell_peer()` parameter
                 let peer = self.peers.get_mut(&actor_uri).unwrap();
+
+                debug!(log, "Requesting current branch");
                 tell_peer(GetCurrentBranchMessage::new(chain_state.get_chain_id().clone()).into(), peer);
             }
             NetworkChannelMsg::PeerMessageReceived(received) => {
-                let log = ctx.system.log().new(slog::o!("peer" => received.peer.name().to_string()));
-
                 match peers.get_mut(received.peer.uri()) {
                     Some(peer) => {
+                        let log = ctx.system.log().new(slog::o!("peer" => peer.peer_id.clone()));
+
                         for message in received.message.messages() {
                             match message {
                                 PeerMessage::CurrentBranch(message) => {
@@ -413,11 +426,26 @@ impl ChainManager {
                                     if chain_state.get_chain_id() == &message.chain_id {
                                         if let Some(current_head_local) = &current_head.local {
                                             if let Some(current_head) = block_storage.get(current_head_local.hash())? {
-                                                let history = chain_state.get_history()?;
-                                                let msg = CurrentBranchMessage::new(chain_state.get_chain_id().clone(), CurrentBranch::new((*current_head.header).clone(), history));
+                                                // prepare seed per peer
+                                                let seed = Seed::new(
+                                                    identity_peer_id.clone(),
+                                                    (&*peer.peer_public_key).clone(),
+                                                );
+                                                // calculate history
+                                                let history = chain_state.get_history(&current_head.hash, seed)?;
+                                                // send message
+                                                let msg = CurrentBranchMessage::new(
+                                                    chain_state.get_chain_id().clone(),
+                                                    CurrentBranch::new(
+                                                        (*current_head.header).clone(),
+                                                        history,
+                                                    ),
+                                                );
                                                 tell_peer(msg.into(), peer);
                                             }
                                         }
+                                    } else {
+                                        warn!(log, "Peer is requesting current branch from unsupported chain_id"; "chain_id" => HashType::ChainId.bytes_to_string(chain_state.get_chain_id()));
                                     }
                                 }
                                 PeerMessage::BlockHeader(message) => {
@@ -608,7 +636,7 @@ impl ChainManager {
                                                     | validation::PrevalidateOperationError::BranchNotAppliedYet { .. } => {
                                                         // here we just ignore UnknownBranch
                                                         return Ok(());
-                                                    },
+                                                    }
                                                     poe => {
                                                         // other error just propagate
                                                         return Err(format_err!("Operation from p2p ({}) was not added to mempool. Reason: {:?}", HashType::OperationHash.bytes_to_string(&operation_hash), poe));
@@ -648,7 +676,11 @@ impl ChainManager {
                             }
                         }
                     }
-                    None => debug!(log, "Received message from non-existing peer")
+                    None => {
+                        warn!(ctx.system.log(), "Received message from non-existing peer actor";
+                                                "peer" => received.peer.name().to_string(),
+                                                "peer_uri" => received.peer.uri().to_string());
+                    }
                 }
             }
             _ => (),
@@ -998,8 +1030,10 @@ impl ChainManager {
     }
 }
 
-impl ActorFactoryArgs<(NetworkChannelRef, ShellChannelRef, PersistentStorage, Arc<TezosApiConnectionPool>, ChainId, bool, usize)> for ChainManager {
-    fn create_args((network_channel, shell_channel, persistent_storage, tezos_readonly_prevalidation_api, chain_id, is_sandbox, num_of_peers_for_bootstrap_threshold): (NetworkChannelRef, ShellChannelRef, PersistentStorage, Arc<TezosApiConnectionPool>, ChainId, bool, usize)) -> Self {
+impl ActorFactoryArgs<(NetworkChannelRef, ShellChannelRef, PersistentStorage, Arc<TezosApiConnectionPool>, ChainId, bool, usize, CryptoboxPublicKeyHash)> for ChainManager {
+    fn create_args(
+        (network_channel, shell_channel, persistent_storage, tezos_readonly_prevalidation_api, chain_id, is_sandbox, num_of_peers_for_bootstrap_threshold, identity_peer_id):
+        (NetworkChannelRef, ShellChannelRef, PersistentStorage, Arc<TezosApiConnectionPool>, ChainId, bool, usize, CryptoboxPublicKeyHash)) -> Self {
         ChainManager {
             network_channel,
             shell_channel,
@@ -1008,8 +1042,8 @@ impl ActorFactoryArgs<(NetworkChannelRef, ShellChannelRef, PersistentStorage, Ar
             chain_meta_storage: Box::new(ChainMetaStorage::new(&persistent_storage)),
             operations_storage: Box::new(OperationsStorage::new(&persistent_storage)),
             mempool_storage: MempoolStorage::new(&persistent_storage),
-            chain_state: BlockchainState::new(&persistent_storage, &chain_id),
-            operations_state: OperationsState::new(&persistent_storage, &chain_id),
+            chain_state: BlockchainState::new(&persistent_storage, chain_id.clone()),
+            operations_state: OperationsState::new(&persistent_storage, chain_id),
             peers: HashMap::new(),
             current_head: CurrentHead {
                 local: None,
@@ -1026,6 +1060,7 @@ impl ActorFactoryArgs<(NetworkChannelRef, ShellChannelRef, PersistentStorage, Ar
                 hydrated_state_last: None,
             },
             is_sandbox,
+            identity_peer_id,
             is_bootstrapped: false,
             num_of_peers_for_bootstrap_threshold,
             tezos_readonly_prevalidation_api,
@@ -1269,6 +1304,10 @@ impl Receive<AskPeersAboutCurrentBranch> for ChainManager {
 struct PeerState {
     /// Reference to peer actor
     peer_ref: PeerRef,
+    /// Peer public key - used for seeding history and for identification of peer
+    peer_public_key: Arc<PublicKey>,
+    /// Peer public key displayed as readable format to aviod many computations from hash
+    peer_id: String,
     /// Has peer enabled mempool
     mempool_enabled: bool,
     /// Is bootstrapped flag
@@ -1304,9 +1343,11 @@ struct PeerState {
 }
 
 impl PeerState {
-    fn new(peer_ref: PeerRef, peer_metadata: MetadataMessage) -> Self {
+    fn new(peer_ref: PeerRef, peer_public_key: Arc<PublicKey>, peer_metadata: MetadataMessage) -> Self {
         PeerState {
             peer_ref,
+            peer_id: HashType::CryptoboxPublicKeyHash.bytes_to_string(&peer_public_key),
+            peer_public_key,
             mempool_enabled: !peer_metadata.disable_mempool(),
             is_bootstrapped: false,
             queued_block_headers: HashMap::new(),
@@ -1392,6 +1433,7 @@ pub mod tests {
 
     use slog::{Drain, Level, Logger};
 
+    use crypto::hash::CryptoboxPublicKeyHash;
     use networking::p2p::network_channel::NetworkChannel;
     use networking::p2p::peer::Peer;
     use storage::tests_common::TmpStorage;
@@ -1437,7 +1479,9 @@ pub mod tests {
             &socket_address,
         ).unwrap();
 
-        PeerState::new(peer, MetadataMessage::new(false, false))
+        let peer_public_key: CryptoboxPublicKeyHash = HashType::CryptoboxPublicKeyHash.string_to_bytes("idsg2wkkDDv2cbEMK4zH49fjgyn7XT").expect("Failed to create public key hash");
+
+        PeerState::new(peer, Arc::new(peer_public_key), MetadataMessage::new(false, false))
     }
 
     fn assert_peer_bootstrapped(chain_manager: &mut ChainManager, peer_uri: &ActorUri, expected_is_bootstrap: bool) {
@@ -1493,6 +1537,7 @@ pub mod tests {
             chain_id,
             false,
             1,
+            HashType::CryptoboxPublicKeyHash.string_to_bytes(&tezos_identity::Identity::generate(0f64).peer_id)?,
         ));
 
         // empty chain_manager

@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use getset::{CopyGetters, Getters, Setters};
-use rocksdb::{ColumnFamilyDescriptor, MergeOperands, Cache};
+use rocksdb::{Cache, ColumnFamilyDescriptor, MergeOperands};
 use slog::{Logger, warn};
 
 use crypto::hash::{BlockHash, ChainId, HashType};
@@ -19,6 +19,9 @@ pub type BlockMetaStorageKV = dyn KeyValueStoreWithSchema<BlockMetaStorage> + Sy
 
 pub trait BlockMetaStorageReader: Sync + Send {
     fn get(&self, block_hash: &BlockHash) -> Result<Option<Meta>, StorageError>;
+
+    /// Returns n-th predecessor for block_hash
+    fn find_predecessor_at_distance(&self, block_hash: BlockHash, distance: i32) -> Result<Option<BlockHash>, StorageError>;
 }
 
 #[derive(Clone)]
@@ -151,6 +154,49 @@ impl BlockMetaStorageReader for BlockMetaStorage {
         self.kv.get(block_hash)
             .map_err(StorageError::from)
     }
+
+    // TODO: TE-203 - find predecessor re-write in much more optimized and fast way, e.g. like tezos ocaml original impl
+    fn find_predecessor_at_distance(&self, block_hash: BlockHash, requested_distance: i32) -> Result<Option<BlockHash>, StorageError> {
+        if requested_distance == 0 {
+            return Ok(Some(block_hash));
+        }
+
+        let result = {
+            let mut current_block = block_hash;
+            let mut current_distance = 0;
+
+            let predecessor_at_distance = loop {
+                let (predecessor, predecesor_distance) = match self.get(&current_block)? {
+                    Some(meta) => {
+                        match meta.predecessor {
+                            Some(predecessor) => {
+                                if meta.level > Meta::GENESIS_LEVEL {
+                                    (predecessor, current_distance + 1)
+                                } else {
+                                    // if we found genesis level, we return None, because genesis does not have predecessor
+                                    break None;
+                                }
+                            }
+                            None => break None
+                        }
+                    }
+                    None => break None
+                };
+
+                // we finish, if we found distance or if it is a genesis
+                if predecesor_distance == requested_distance {
+                    break Some(predecessor);
+                } else {
+                    // else we continue to predecessor's predecessor
+                    current_block = predecessor;
+                    current_distance = predecesor_distance;
+                }
+            };
+            predecessor_at_distance
+        };
+
+        Ok(result)
+    }
 }
 
 const LEN_BLOCK_HASH: usize = HashType::BlockHash.size();
@@ -204,13 +250,15 @@ pub struct Meta {
 }
 
 impl Meta {
+    pub const GENESIS_LEVEL: i32 = 0;
+
     /// Create Metadata for specific genesis block
     pub fn genesis_meta(genesis_hash: &BlockHash, genesis_chain_id: &ChainId, is_applied: bool) -> Self {
         Meta {
             is_applied,
             predecessor: Some(genesis_hash.clone()), // this is what we want
             successors: vec![], // we do not know (yet) successor of the genesis
-            level: 0,
+            level: Self::GENESIS_LEVEL.clone(),
             chain_id: genesis_chain_id.clone(),
         }
     }

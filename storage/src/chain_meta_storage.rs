@@ -16,8 +16,15 @@ pub type ChainMetaStorageKv = dyn KeyValueStoreWithSchema<ChainMetaStorage> + Sy
 pub type DbVersion = i64;
 
 pub trait ChainMetaStorageReader: Sync + Send {
-    /// Load current head from dedicated storage
+    /// Load current head for chain_id from dedicated storage
     fn get_current_head(&self, chain_id: &ChainId) -> Result<Option<Head>, StorageError>;
+
+    /// Load caboose for chain_id from dedicated storage
+    ///
+    /// `caboose` vs `save_point`:
+    /// - save_point is the lowest block for which we also have the metadata information
+    /// - caboose - so in particular it is the lowest block for which we have stored the context
+    fn get_caboose(&self, chain_id: &ChainId) -> Result<Option<Head>, StorageError>;
 }
 
 /// Represents storage of the chain metadata (current_head, test_chain, ...).
@@ -52,11 +59,20 @@ impl ChainMetaStorage {
         self.kv
             .put(
                 &MetaKey::key_current_head(chain_id.clone()),
-                &MetadataValue::CurrentHead(head),
+                &MetadataValue::Head(head),
             )
             .map_err(StorageError::from)
     }
 
+    #[inline]
+    pub fn set_caboose(&self, chain_id: &ChainId, head: Head) -> Result<(), StorageError> {
+        self.kv
+            .put(
+                &MetaKey::key_caboose(chain_id.clone()),
+                &MetadataValue::Head(head),
+            )
+            .map_err(StorageError::from)
+    }
 
     #[inline]
     pub fn get_test_chain_id(&self, chain_id: &ChainId) -> Result<Option<ChainId>, StorageError> {
@@ -93,7 +109,18 @@ impl ChainMetaStorageReader for ChainMetaStorage {
         self.kv
             .get(&MetaKey::key_current_head(chain_id.clone()))
             .map(|result| match result {
-                Some(MetadataValue::CurrentHead(value)) => Some(value),
+                Some(MetadataValue::Head(value)) => Some(value),
+                _ => None
+            })
+            .map_err(StorageError::from)
+    }
+
+    #[inline]
+    fn get_caboose(&self, chain_id: &ChainId) -> Result<Option<Head>, StorageError> {
+        self.kv
+            .get(&MetaKey::key_caboose(chain_id.clone()))
+            .map(|result| match result {
+                Some(MetadataValue::Head(value)) => Some(value),
                 _ => None
             })
             .map_err(StorageError::from)
@@ -127,12 +154,20 @@ impl MetaKey {
     const IDX_KEY: usize = Self::IDX_CHAIN_ID + Self::LEN_CHAIN_ID;
 
     const KEY_CURRENT_HEAD: &'static str = "ch";
+    const KEY_CABOOSE: &'static str = "cbs";
     const KEY_TEST_CHAIN_ID: &'static str = "tcid";
 
     fn key_current_head(chain_id: ChainId) -> MetaKey {
         MetaKey {
             chain_id,
             key: Self::KEY_CURRENT_HEAD.to_string(),
+        }
+    }
+
+    fn key_caboose(chain_id: ChainId) -> MetaKey {
+        MetaKey {
+            chain_id,
+            key: Self::KEY_CABOOSE.to_string(),
         }
     }
 
@@ -171,7 +206,7 @@ impl Decoder for MetaKey {
 
 #[derive(Serialize, Deserialize)]
 pub enum MetadataValue {
-    CurrentHead(Head),
+    Head(Head),
     TestChainId(ChainId),
 }
 
@@ -232,6 +267,52 @@ mod tests {
         assert_eq!(index.get_current_head(&chain_id1)?.unwrap().hash(), block_2.hash());
         assert!(index.get_current_head(&chain_id2)?.is_some());
         assert_eq!(index.get_current_head(&chain_id2)?.unwrap().hash(), block_2.hash());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_caboose() -> Result<(), Error> {
+        let tmp_storage = TmpStorage::create("__test_caboose")?;
+        let index = ChainMetaStorage::new(tmp_storage.storage());
+
+        let chain_id1 = HashType::ChainId.string_to_bytes("NetXgtSLGNJvNye")?;
+        let block_1 = Head::new(
+            HashType::BlockHash.string_to_bytes("BLockGenesisGenesisGenesisGenesisGenesisb83baZgbyZe")?,
+            1,
+            vec![],
+        );
+
+        let chain_id2 = HashType::ChainId.string_to_bytes("NetXjD3HPJJjmcd")?;
+        let block_2 = Head::new(
+            HashType::BlockHash.string_to_bytes("BLockGenesisGenesisGenesisGenesisGenesisd6f5afWyME7")?,
+            2,
+            vec![],
+        );
+
+        // no current heads
+        assert!(index.get_caboose(&chain_id1)?.is_none());
+        assert!(index.get_caboose(&chain_id2)?.is_none());
+
+        // set for chain_id1
+        index.set_caboose(&chain_id1, block_1.clone())?;
+        assert!(index.get_caboose(&chain_id1)?.is_some());
+        assert_eq!(index.get_caboose(&chain_id1)?.unwrap().hash(), block_1.hash());
+        assert!(index.get_caboose(&chain_id2)?.is_none());
+
+        // set for chain_id2
+        index.set_caboose(&chain_id2, block_2.clone())?;
+        assert!(index.get_caboose(&chain_id1)?.is_some());
+        assert_eq!(index.get_caboose(&chain_id1)?.unwrap().hash(), block_1.hash());
+        assert!(index.get_caboose(&chain_id2)?.is_some());
+        assert_eq!(index.get_caboose(&chain_id2)?.unwrap().hash(), block_2.hash());
+
+        // update for chain_id1
+        index.set_caboose(&chain_id1, block_2.clone())?;
+        assert!(index.get_caboose(&chain_id1)?.is_some());
+        assert_eq!(index.get_caboose(&chain_id1)?.unwrap().hash(), block_2.hash());
+        assert!(index.get_caboose(&chain_id2)?.is_some());
+        assert_eq!(index.get_caboose(&chain_id2)?.unwrap().hash(), block_2.hash());
 
         Ok(())
     }

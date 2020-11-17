@@ -2892,6 +2892,7 @@ dependencies = [
  "slog",
  "slog-async",
  "slog-term",
+ "sodiumoxide",
  "storage",
  "tezos_api",
  "tezos_context",
