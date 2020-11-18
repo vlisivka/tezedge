@@ -228,6 +228,18 @@ pub async fn inject_block(req: Request<Body>, _: Params, _: Query, env: RpcServi
     )
 }
 
+pub async fn mempool_request_operations(req: Request<Body>, _: Params, _: Query, env: RpcServiceEnvironment) -> ServiceResult {
+    let body = hyper::body::to_bytes(req.into_body()).await?;
+    let body = String::from_utf8(body.to_vec())?;
+
+    let shell_channel = env.shell_channel();
+
+    result_to_json_response(
+        services::mempool_services::request_operations(&body, &env, shell_channel.clone()),
+        env.log(),
+    )
+}
+
 pub async fn get_block_protocols(_: Request<Body>, params: Params, _: Query, env: RpcServiceEnvironment) -> ServiceResult {
     let _chain_id = params.get_str("chain_id").unwrap();
     let block_id = params.get_str("block_id").unwrap();

@@ -9,7 +9,7 @@ use serde_json::Value;
 use slog::Logger;
 
 use crypto::hash::{HashType, OperationHash, ProtocolHash};
-use shell::shell_channel::{CurrentMempoolState, InjectBlock, MempoolOperationReceived, ShellChannelRef, ShellChannelTopic};
+use shell::shell_channel::{CurrentMempoolState, InjectBlock, MempoolOperationReceived, ShellChannelRef, ShellChannelTopic, RequestCurrentHead};
 use shell::validation;
 use storage::{BlockMetaStorage, BlockMetaStorageReader, BlockStorage, BlockStorageReader, MempoolStorage};
 use storage::mempool_storage::MempoolOperationType;
@@ -261,6 +261,31 @@ pub fn inject_block(
 
     // return the block hash to the caller
     Ok(block_hash)
+}
+
+pub fn request_operations(
+    _data: &str,
+    env: &RpcServiceEnvironment,
+    shell_channel: ShellChannelRef) -> Result<HashMap<String, String>, failure::Error> {
+    let persistent_storage = env.persistent_storage();
+    let block_storage: Box<dyn BlockStorageReader> = Box::new(BlockStorage::new(persistent_storage));
+    let block_meta_storage: Box<dyn BlockMetaStorageReader> = Box::new(BlockMetaStorage::new(persistent_storage));
+    let state = env.state();
+
+    let state = state.read().unwrap();
+
+    if state.disable_mempool() {
+        bail!("Cannot request operations, mempool is disabled")
+    }
+
+    // request current head from the peers
+    shell_channel.tell(
+        Publish {
+            msg: RequestCurrentHead.into(),
+            topic: ShellChannelTopic::ShellEvents.into(),
+        }, None);
+
+    Ok(HashMap::new())
 }
 
 #[cfg(test)]
