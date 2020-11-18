@@ -29,7 +29,7 @@ use tezos_messages::ts_to_rfc3339;
 
 use crate::encoding::base_types::{TimeStamp, UniString};
 use crate::rpc_actor::RpcCollectedStateRef;
-use crate::services::mempool_services::{MempoolOperations, get_pending_operations};
+use crate::services::mempool_services::get_pending_operations;
 
 #[macro_export]
 macro_rules! merge_slices {

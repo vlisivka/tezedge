@@ -384,7 +384,7 @@ pub(crate) fn get_node_version(network_version: &NetworkVersion) -> Result<NodeV
 }
 
 // TODO: This requires further investigation, for now, just mock an empty vector for python tests' sake
-pub(crate) fn get_user_activated_upgrades(env: &RpcServiceEnvironment) -> Result<Vec<String>, failure::Error> {
+pub(crate) fn get_user_activated_upgrades(_env: &RpcServiceEnvironment) -> Result<Vec<String>, failure::Error> {
     Ok(vec![])
 }
 

@@ -19,7 +19,7 @@ use std::time::{Duration, Instant, SystemTime};
 use failure::{Error, format_err};
 use itertools::Itertools;
 use riker::actors::*;
-use slog::{debug, info, Logger, trace, warn, crit, error};
+use slog::{debug, info, Logger, trace, warn, crit};
 
 use crypto::hash::{BlockHash, ChainId, HashType, OperationHash};
 use networking::p2p::network_channel::{NetworkChannelMsg, NetworkChannelRef, PeerBootstrapped};
@@ -249,10 +249,6 @@ impl ChainManager {
     /// Check for missing blocks in local chain copy, and schedule downloading for those blocks
     fn check_chain_completeness(&mut self, ctx: &Context<ChainManagerMsg>) -> Result<(), Error> {
         let ChainManager { peers, chain_state, operations_state, stats, current_head, .. } = self;
-        // crit!(ctx.system.log(), "--");
-
-        // crit!(ctx.system.log(), "check_chain_completeness -> PEERS: {:?}", peers.iter().map(|(k, _)| k.to_string()).collect::<Vec<_>>());
-        // crit!(ctx.system.log(), "check_chain_completeness -> has_missing_blocks: {}", chain_state.has_missing_blocks());
 
         // check for missing blocks
         if chain_state.has_missing_blocks() {
@@ -261,11 +257,7 @@ impl ChainManager {
                 .filter(|peer| peer.available_block_queue_capacity() > 0)
                 .sorted_by_key(|peer| peer.available_block_queue_capacity()).rev()
                 .for_each(|peer| {
-                    // crit!(ctx.system.log(), "check_chain_completeness -> Handling potentional free peer (capacity): {:?}", peer.peer_ref);
                     let mut missing_blocks = chain_state.drain_missing_blocks(peer.available_block_queue_capacity(), peer.current_head_level.unwrap());
-                    // crit!(ctx.system.log(), "check_chain_completeness -> Handling potentional free peer (capacity): {:?}", peer.peer_ref);
-                    // crit!(ctx.system.log(), "check_chain_completeness -> Missing blocks: {:?}", &missing_blocks);
-                    // crit!(ctx.system.log(), "check_chain_completeness -> Current head - local: {:?}", current_head.local);
 
                     if !missing_blocks.is_empty() && current_head.local.is_some(){
                         let queued_blocks = missing_blocks.drain(..)
@@ -279,13 +271,10 @@ impl ChainManager {
                                     None
                                 }
                             })
-                            // .filter_map(|missing_block_hash| missing_block_hash)
                             .collect::<Vec<_>>();
-                            
-                        // crit!(ctx.system.log(), "check_chain_completeness -> is peer {} queue empty: {:?}", peer.peer_ref, queued_blocks.is_empty());
+
                         if !queued_blocks.is_empty() {
                             peer.block_request_last = Instant::now();
-                            // crit!(ctx.system.log(), "check_chain_completeness -> Sending get headers messages: {:?}", queued_blocks.iter().map(|h| BLOCK_HASH_ENCODING.bytes_to_string(h)).collect::<Vec<String>>());
                             tell_peer(GetBlockHeadersMessage::new(queued_blocks).into(), peer);
                         }
                     }

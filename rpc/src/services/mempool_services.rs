@@ -267,9 +267,6 @@ pub fn request_operations(
     _data: &str,
     env: &RpcServiceEnvironment,
     shell_channel: ShellChannelRef) -> Result<HashMap<String, String>, failure::Error> {
-    let persistent_storage = env.persistent_storage();
-    let block_storage: Box<dyn BlockStorageReader> = Box::new(BlockStorage::new(persistent_storage));
-    let block_meta_storage: Box<dyn BlockMetaStorageReader> = Box::new(BlockMetaStorage::new(persistent_storage));
     let state = env.state();
 
     let state = state.read().unwrap();

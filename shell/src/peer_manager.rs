@@ -15,7 +15,7 @@ use dns_lookup::LookupError;
 use futures::lock::Mutex;
 use rand::seq::SliceRandom;
 use riker::actors::*;
-use slog::{debug, info, Logger, trace, warn, crit};
+use slog::{debug, info, Logger, trace, warn};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Handle;
 use tokio::time::timeout;
