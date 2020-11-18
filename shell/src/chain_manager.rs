@@ -857,6 +857,17 @@ impl ChainManager {
                     warn!(log, "Injected duplicated block - will be ignored!");
                 }
             }
+            ShellChannelMsg::RequestCurrentHead(_) => {
+                let ChainManager { peers, chain_state, .. } = self;
+                peers.iter_mut()
+                    .filter(|(_, peer)| peer.mempool_enabled)
+                    .for_each(|(_, peer)| {
+                        tell_peer(
+                            GetCurrentHeadMessage::new(chain_state.get_chain_id().to_vec()).into(),
+                            peer,
+                        )
+                    });
+            }
             ShellChannelMsg::ShuttingDown(_) => {
                 self.shutting_down = true;
                 unsubscribe_from_dead_letters(ctx.system.dead_letters(), ctx.myself());

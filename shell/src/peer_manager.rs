@@ -15,7 +15,7 @@ use dns_lookup::LookupError;
 use futures::lock::Mutex;
 use rand::seq::SliceRandom;
 use riker::actors::*;
-use slog::{debug, info, Logger, trace, warn};
+use slog::{debug, info, Logger, trace, warn, crit};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Handle;
 use tokio::time::timeout;
@@ -131,7 +131,7 @@ impl PeerManager {
                  p2p_config: P2p,
     ) -> Result<PeerManagerRef, CreateError> {
         sys.actor_of_props::<PeerManager>(
-            PeerManager::name(),
+            &format!("{}-{}", PeerManager::name(), &identity.peer_id),
             Props::new_args((
                 network_channel,
                 shell_channel,
@@ -200,7 +200,6 @@ impl PeerManager {
                 }.into(),
                 topic: NetworkChannelTopic::NetworkEvents.into(),
             }, None);
-
         peer
     }
 
