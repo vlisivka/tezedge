@@ -6,15 +6,14 @@ use sodiumoxide::crypto::hash::sha256::Digest;
 
 use crate::hash::{BlockHash, CryptoboxPublicKeyHash};
 
-
 #[derive(Clone)]
-pub struct Seed {
-    sender_id: CryptoboxPublicKeyHash,
-    receiver_id: CryptoboxPublicKeyHash,
+pub struct Seed<'s, 'r> {
+    sender_id: &'s CryptoboxPublicKeyHash,
+    receiver_id: &'r CryptoboxPublicKeyHash,
 }
 
-impl Seed {
-    pub fn new(sender_id: CryptoboxPublicKeyHash, receiver_id: CryptoboxPublicKeyHash) -> Self {
+impl<'s, 'r> Seed<'s, 'r> {
+    pub fn new(sender_id: &'s CryptoboxPublicKeyHash, receiver_id: &'r CryptoboxPublicKeyHash) -> Self {
         Self {
             sender_id,
             receiver_id,
@@ -94,7 +93,7 @@ mod tests {
     #[test]
     pub fn test_step_init() -> Result<(), failure::Error> {
         let step = Step::init(
-            &seed('s', 'r'),
+            &Seed::new(&generate_key_string('s'), &generate_key_string('r')),
             &HashType::BlockHash.string_to_bytes("BLrJE6yTjLLuEYgyqLxDBduEuA5S1uCkiq499tCK81TLoqTbNmm")?,
         );
         assert_step_state(&step, (1, 9, "2343509bfcea5ce59e9c241ec61ff76c4e01f8a87eae3743755cb61ec875eaf5"))
@@ -103,7 +102,7 @@ mod tests {
     #[test]
     pub fn test_step_next() -> Result<(), failure::Error> {
         let mut step = Step::init(
-            &seed('s', 'r'),
+            &Seed::new(&generate_key_string('s'), &generate_key_string('r')),
             &HashType::BlockHash.string_to_bytes("BLrJE6yTjLLuEYgyqLxDBduEuA5S1uCkiq499tCK81TLoqTbNmm")?,
         );
         assert_step_state(&step, (1, 9, "2343509bfcea5ce59e9c241ec61ff76c4e01f8a87eae3743755cb61ec875eaf5"))?;
@@ -206,16 +205,10 @@ mod tests {
         Ok(())
     }
 
-    fn seed(sender_id: char, receiver_id: char) -> Seed {
-        let generate_key_string = |c: char| {
-            std::iter::repeat(c)
-                .take(HashType::CryptoboxPublicKeyHash.size())
-                .collect::<String>()
-        };
-
-        let sender_id: CryptoboxPublicKeyHash = generate_key_string(sender_id).into_bytes();
-        let receiver_id: CryptoboxPublicKeyHash = generate_key_string(receiver_id).into_bytes();
-
-        Seed::new(sender_id, receiver_id)
+    fn generate_key_string(c: char) -> CryptoboxPublicKeyHash {
+        std::iter::repeat(c)
+            .take(HashType::CryptoboxPublicKeyHash.size())
+            .collect::<String>()
+            .into_bytes()
     }
 }

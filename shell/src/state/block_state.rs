@@ -277,7 +277,7 @@ impl BlockchainState {
         &self.chain_id
     }
 
-    pub fn get_history(&self, head: &BlockHash, seed: Seed) -> Result<Vec<BlockHash>, StorageError> {
+    pub fn get_history(&self, head: &BlockHash, seed: &Seed) -> Result<Vec<BlockHash>, StorageError> {
         Self::compute_history(
             &self.block_meta_storage,
             self.chain_meta_storage.get_caboose(&self.chain_id)?,
@@ -288,13 +288,13 @@ impl BlockchainState {
     }
 
     /// Resulted history is sorted: "from oldest block to newest"
-    fn compute_history(block_meta_storage: &BlockMetaStorage, caboose: Option<Head>, head: &BlockHash, max_size: u8, seed: Seed) -> Result<Vec<BlockHash>, StorageError> {
+    fn compute_history(block_meta_storage: &BlockMetaStorage, caboose: Option<Head>, head: &BlockHash, max_size: u8, seed: &Seed) -> Result<Vec<BlockHash>, StorageError> {
         if max_size <= 0 {
             return Ok(vec![]);
         }
 
         // init steping
-        let mut step = Step::init(&seed, &head);
+        let mut step = Step::init(seed, &head);
 
         // iterate and get history records
         let mut counter = max_size;
@@ -619,7 +619,6 @@ mod tests {
         assert!(reorg_block_meta.successors().contains(&blocksdb.block_hash("C0")));
 
         // calculates and checks
-        let seed = data::seed('s', 'r');
         let caboose = Some(Head::new(blocksdb.block_hash("Genesis"), Meta::GENESIS_LEVEL, vec![]));
 
         data::assert_history(
@@ -630,7 +629,7 @@ mod tests {
                 caboose.clone(),
                 &blocksdb.block_hash("A8"),
                 6,
-                seed.clone(),
+                &Seed::new(&data::generate_key_string('s'), &data::generate_key_string('r')),
             )?,
         );
 
@@ -642,7 +641,7 @@ mod tests {
                 caboose.clone(),
                 &blocksdb.block_hash("B8"),
                 8,
-                seed.clone(),
+                &Seed::new(&data::generate_key_string('s'), &data::generate_key_string('r')),
             )?,
         );
 
@@ -654,7 +653,7 @@ mod tests {
                 caboose.clone(),
                 &blocksdb.block_hash("B8"),
                 4,
-                seed.clone(),
+                &Seed::new(&data::generate_key_string('s'), &data::generate_key_string('r')),
             )?,
         );
 
@@ -666,7 +665,7 @@ mod tests {
                 caboose.clone(),
                 &blocksdb.block_hash("A5"),
                 0,
-                seed.clone(),
+                &Seed::new(&data::generate_key_string('s'), &data::generate_key_string('r')),
             )?,
         );
 
@@ -678,7 +677,7 @@ mod tests {
                 caboose.clone(),
                 &blocksdb.block_hash("A5"),
                 100,
-                seed.clone(),
+                &Seed::new(&data::generate_key_string('s'), &data::generate_key_string('r')),
             )?,
         );
 
@@ -690,7 +689,7 @@ mod tests {
                 caboose,
                 &blocksdb.block_hash("C62"),
                 29,
-                seed.clone(),
+                &Seed::new(&data::generate_key_string('s'), &data::generate_key_string('r')),
             )?,
         );
 
@@ -717,8 +716,6 @@ mod tests {
         use storage::{BlockHeaderWithHash, BlockMetaStorage, BlockStorage, BlockStorageReader};
         use tezos_messages::p2p::binary_message::BinaryMessage;
         use tezos_messages::p2p::encoding::block_header::BlockHeader;
-
-        use crate::state::block_state::Seed;
 
         macro_rules! init_block {
             ($blocks:ident, $name:expr, $block_hash_expected:expr, $block_header_hex_data:expr) => {
@@ -948,17 +945,11 @@ mod tests {
             });
         }
 
-        pub(crate) fn seed(sender_id: char, receiver_id: char) -> Seed {
-            let generate_key_string = |c: char| {
-                std::iter::repeat(c)
-                    .take(HashType::CryptoboxPublicKeyHash.size())
-                    .collect::<String>()
-            };
-
-            let sender_id: CryptoboxPublicKeyHash = generate_key_string(sender_id).into_bytes();
-            let receiver_id: CryptoboxPublicKeyHash = generate_key_string(receiver_id).into_bytes();
-
-            Seed::new(sender_id, receiver_id)
+        pub(crate) fn generate_key_string(c: char) -> CryptoboxPublicKeyHash {
+            std::iter::repeat(c)
+                .take(HashType::CryptoboxPublicKeyHash.size())
+                .collect::<String>()
+                .into_bytes()
         }
 
         pub(crate) fn assert_history(

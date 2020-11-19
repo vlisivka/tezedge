@@ -427,13 +427,11 @@ impl ChainManager {
                                     if chain_state.get_chain_id() == &message.chain_id {
                                         if let Some(current_head_local) = &current_head.local {
                                             if let Some(current_head) = block_storage.get(current_head_local.block_hash())? {
-                                                // prepare seed per peer
-                                                let seed = Seed::new(
-                                                    identity_peer_id.clone(),
-                                                    (&*peer.peer_public_key).clone(),
-                                                );
                                                 // calculate history
-                                                let history = chain_state.get_history(&current_head.hash, seed)?;
+                                                let history = chain_state.get_history(
+                                                    &current_head.hash,
+                                                    &Seed::new(&identity_peer_id, &peer.peer_public_key)
+                                                )?;
                                                 // send message
                                                 let msg = CurrentBranchMessage::new(
                                                     chain_state.get_chain_id().clone(),
