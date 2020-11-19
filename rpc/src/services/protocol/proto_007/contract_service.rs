@@ -14,7 +14,7 @@ use tezos_messages::p2p::binary_message::BinaryMessage;
 use crate::helpers::ContextProtocolParam;
 use crate::services::protocol::proto_007::helpers::construct_indexed_contract_key;
 
-pub(crate) fn get_contract_counter(context_proto_params: ContextProtocolParam, pkh: &str, context: TezedgeContext) -> Result<Option<String>, failure::Error> {
+pub(crate) fn get_contract_counter(context_proto_params: ContextProtocolParam, pkh: &str, context: &TezedgeContext) -> Result<Option<String>, failure::Error> {
 
     // level of the block
     let level = context_proto_params.level;
@@ -30,13 +30,13 @@ pub(crate) fn get_contract_counter(context_proto_params: ContextProtocolParam, p
     };
 
     if let Some(contract_counter) = contract_counter {
-        Ok(Some(contract_counter.to_string()))
+        Ok(Some(contract_counter.to_string_representation()))
     } else {
         Ok(None)
     }
 }
 
-pub(crate) fn get_contract_manager_key(context_proto_params: ContextProtocolParam, pkh: &str, context: TezedgeContext) -> Result<Option<String>, failure::Error> {
+pub(crate) fn get_contract_manager_key(context_proto_params: ContextProtocolParam, pkh: &str, context: &TezedgeContext) -> Result<Option<String>, failure::Error> {
 
     // level of the block
     let level = context_proto_params.level;
@@ -48,7 +48,7 @@ pub(crate) fn get_contract_manager_key(context_proto_params: ContextProtocolPara
     if let Some(data) = context.get_key_from_history(&ctx_hash, &context_key!("{}/{}", construct_indexed_contract_key(pkh)?, "manager"))? {
         match SignaturePublicKey::from_tagged_bytes(data) {
             Ok(pk) => {
-                Ok(Some(pk.to_string()))
+                Ok(Some(pk.to_string_representation()))
             }
             Err(_) => bail!("Manager key not revealed yet")
         }
