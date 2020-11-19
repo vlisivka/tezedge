@@ -251,22 +251,22 @@ mod tests {
         // set for chain_id1
         index.set_current_head(&chain_id1, block_1.clone())?;
         assert!(index.get_current_head(&chain_id1)?.is_some());
-        assert_eq!(index.get_current_head(&chain_id1)?.unwrap().hash(), block_1.hash());
+        assert_eq!(index.get_current_head(&chain_id1)?.unwrap().block_hash(), block_1.block_hash());
         assert!(index.get_current_head(&chain_id2)?.is_none());
 
         // set for chain_id2
         index.set_current_head(&chain_id2, block_2.clone())?;
         assert!(index.get_current_head(&chain_id1)?.is_some());
-        assert_eq!(index.get_current_head(&chain_id1)?.unwrap().hash(), block_1.hash());
+        assert_eq!(index.get_current_head(&chain_id1)?.unwrap().block_hash(), block_1.block_hash());
         assert!(index.get_current_head(&chain_id2)?.is_some());
-        assert_eq!(index.get_current_head(&chain_id2)?.unwrap().hash(), block_2.hash());
+        assert_eq!(index.get_current_head(&chain_id2)?.unwrap().block_hash(), block_2.block_hash());
 
         // update for chain_id1
         index.set_current_head(&chain_id1, block_2.clone())?;
         assert!(index.get_current_head(&chain_id1)?.is_some());
-        assert_eq!(index.get_current_head(&chain_id1)?.unwrap().hash(), block_2.hash());
+        assert_eq!(index.get_current_head(&chain_id1)?.unwrap().block_hash(), block_2.block_hash());
         assert!(index.get_current_head(&chain_id2)?.is_some());
-        assert_eq!(index.get_current_head(&chain_id2)?.unwrap().hash(), block_2.hash());
+        assert_eq!(index.get_current_head(&chain_id2)?.unwrap().block_hash(), block_2.block_hash());
 
         Ok(())
     }
@@ -297,22 +297,22 @@ mod tests {
         // set for chain_id1
         index.set_caboose(&chain_id1, block_1.clone())?;
         assert!(index.get_caboose(&chain_id1)?.is_some());
-        assert_eq!(index.get_caboose(&chain_id1)?.unwrap().hash(), block_1.hash());
+        assert_eq!(index.get_caboose(&chain_id1)?.unwrap().block_hash(), block_1.block_hash());
         assert!(index.get_caboose(&chain_id2)?.is_none());
 
         // set for chain_id2
         index.set_caboose(&chain_id2, block_2.clone())?;
         assert!(index.get_caboose(&chain_id1)?.is_some());
-        assert_eq!(index.get_caboose(&chain_id1)?.unwrap().hash(), block_1.hash());
+        assert_eq!(index.get_caboose(&chain_id1)?.unwrap().block_hash(), block_1.block_hash());
         assert!(index.get_caboose(&chain_id2)?.is_some());
-        assert_eq!(index.get_caboose(&chain_id2)?.unwrap().hash(), block_2.hash());
+        assert_eq!(index.get_caboose(&chain_id2)?.unwrap().block_hash(), block_2.block_hash());
 
         // update for chain_id1
         index.set_caboose(&chain_id1, block_2.clone())?;
         assert!(index.get_caboose(&chain_id1)?.is_some());
-        assert_eq!(index.get_caboose(&chain_id1)?.unwrap().hash(), block_2.hash());
+        assert_eq!(index.get_caboose(&chain_id1)?.unwrap().block_hash(), block_2.block_hash());
         assert!(index.get_caboose(&chain_id2)?.is_some());
-        assert_eq!(index.get_caboose(&chain_id2)?.unwrap().hash(), block_2.hash());
+        assert_eq!(index.get_caboose(&chain_id2)?.unwrap().block_hash(), block_2.block_hash());
 
         Ok(())
     }

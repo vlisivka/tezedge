@@ -163,7 +163,7 @@ impl BlockchainState {
 
         // we need to check, if previous head is predecessor of new_head (for later use)
         let head_result = match &current_head {
-            Some(previos_head) => if previos_head.hash().eq(potential_new_head.header().header.predecessor()) {
+            Some(previos_head) => if previos_head.block_hash().eq(potential_new_head.header().header.predecessor()) {
                 HeadResult::HeadIncrement
             } else {
                 // if previous head is not predecesor of new head, means it could be new branch
@@ -319,7 +319,7 @@ impl BlockchainState {
                     // close history with caboose, if predecessor was not found in this run
                     if let Some(caboose) = caboose {
                         if let Some(last) = history.last() {
-                            if !last.eq(caboose.hash()) {
+                            if !last.eq(caboose.block_hash()) {
                                 history.push(caboose.into());
                             }
                         } else {

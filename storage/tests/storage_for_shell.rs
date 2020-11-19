@@ -94,11 +94,11 @@ fn test_storage() -> Result<(), Error> {
 
     // check current head is on genesis
     let current_head = chain_meta_storage.get_current_head(&init_data.chain_id)?.expect("Current header should be set");
-    assert_eq!(current_head.hash(), &init_data.genesis_block_header_hash);
+    assert_eq!(current_head.block_hash(), &init_data.genesis_block_header_hash);
 
     // check caboose is on genesis
     let caboose = chain_meta_storage.get_caboose(&init_data.chain_id)?.expect("Caboose should be set");
-    assert_eq!(caboose.hash(), &init_data.genesis_block_header_hash);
+    assert_eq!(caboose.block_hash(), &init_data.genesis_block_header_hash);
 
     // genesis is stored with replaced context hash
     let genesis = block_storage.get(&init_data.genesis_block_header_hash)?.expect("Genesis was not stored!");
@@ -174,7 +174,7 @@ fn test_storage() -> Result<(), Error> {
 
     // load current head - should be changed
     let current_head = chain_meta_storage.get_current_head(&init_data.chain_id)?.expect("Current header should be set");
-    assert_eq!(current_head.hash(), &block.hash);
+    assert_eq!(current_head.block_hash(), &block.hash);
 
     Ok(())
 }

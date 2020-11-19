@@ -331,7 +331,7 @@ impl ChainManager {
         }
 
         if let Some(current_head_local) = self.current_head.local.as_ref() {
-            let block_hash = current_head_local.hash().clone();
+            let block_hash = current_head_local.block_hash().clone();
             self.check_successors_for_apply(ctx, &block_hash)?;
         }
 
@@ -426,7 +426,7 @@ impl ChainManager {
                                 PeerMessage::GetCurrentBranch(message) => {
                                     if chain_state.get_chain_id() == &message.chain_id {
                                         if let Some(current_head_local) = &current_head.local {
-                                            if let Some(current_head) = block_storage.get(current_head_local.hash())? {
+                                            if let Some(current_head) = block_storage.get(current_head_local.block_hash())? {
                                                 // prepare seed per peer
                                                 let seed = Seed::new(
                                                     identity_peer_id.clone(),
@@ -508,7 +508,7 @@ impl ChainManager {
                                 PeerMessage::GetCurrentHead(message) => {
                                     if chain_state.get_chain_id() == message.chain_id() {
                                         if let Some(current_head_local) = &current_head.local {
-                                            if let Some(current_head) = block_storage.get(current_head_local.hash())? {
+                                            if let Some(current_head) = block_storage.get(current_head_local.block_hash())? {
                                                 let msg = CurrentHeadMessage::new(
                                                     chain_state.get_chain_id().clone(),
                                                     (*current_head.header).clone(),
@@ -706,7 +706,7 @@ impl ChainManager {
                 // we try to set it as "new current head", if some means set, if none means just ignore block
                 if let Some((new_head, new_head_result)) = self.chain_state.try_set_new_current_head(&message, &self.current_head.local, &self.current_mempool_state)? {
                     debug!(ctx.system.log(), "New current head";
-                                             "block_header_hash" => HashType::BlockHash.bytes_to_string(new_head.hash()),
+                                             "block_header_hash" => HashType::BlockHash.bytes_to_string(new_head.block_hash()),
                                              "level" => new_head.level(),
                                              "result" => format!("{}", new_head_result)
                     );
@@ -1414,7 +1414,7 @@ fn resolve_mempool_to_send_to_peer(peer: &PeerState, mempool_state: &Option<Arc<
     if let Some(mempool_state) = mempool_state {
         let mempool_state = mempool_state.read().unwrap();
         if let Some(mempool_head_hash) = &mempool_state.head {
-            if mempool_head_hash == current_head.hash() {
+            if mempool_head_hash == current_head.block_hash() {
                 resolve_mempool_to_send(&mempool_state)
             } else {
                 Mempool::default()
