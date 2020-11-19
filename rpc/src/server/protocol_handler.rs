@@ -106,15 +106,3 @@ pub async fn call_protocol_rpc(req: Request<Body>, params: Params, _: Query, env
         env.log(),
     )
 }
-
-pub async fn levels_in_current_cycle(_: Request<Body>, params: Params, query: Query, env: RpcServiceEnvironment) -> ServiceResult {
-    let chain_param = params.get_str("chain_id").unwrap();
-    let block_param = params.get_str("block_id").unwrap();
-
-    let offset = query.get_str("offset");
-
-    result_to_json_response(
-        services::protocol::get_levels_in_current_cycle(chain_param, block_param, offset, &env),
-        env.log(),
-    )
-}

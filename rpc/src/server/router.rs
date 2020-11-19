@@ -53,7 +53,6 @@ pub(crate) fn create_routes(is_sandbox: bool) -> PathTree<Handler> {
     routes.handle(Method::GET, "/chains/:chain_id/blocks/:block_id/context/contracts/:pkh/manager_key", protocol_handler::get_contract_manager_key);
     routes.handle(Method::GET, "/chains/:chain_id/blocks/:block_id/helpers/baking_rights", protocol_handler::baking_rights);
     routes.handle(Method::GET, "/chains/:chain_id/blocks/:block_id/helpers/endorsing_rights", protocol_handler::endorsing_rights);
-    routes.handle(Method::GET, "/chains/:chain_id/blocks/:block_id/helpers/levels_in_current_cycle", protocol_handler::levels_in_current_cycle);
     routes.handle(Method::GET, "/chains/:chain_id/blocks/:block_id/votes/listings", protocol_handler::votes_listings);
 
     // Other Protocol rpcs - routed through ffi calls

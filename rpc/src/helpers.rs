@@ -1,7 +1,7 @@
 // Copyright (c) SimpleStaking and Tezedge Contributors
 // SPDX-License-Identifier: MIT
 
-use std::{collections::HashMap, HashSet, convert::TryFrom};
+use std::{collections::{HashMap, HashSet}, convert::TryFrom};
 use std::convert::TryInto;
 use std::pin::Pin;
 
