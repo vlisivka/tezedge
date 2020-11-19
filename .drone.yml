@@ -63,7 +63,7 @@ steps:
     - rm -rf /tmp/tezos-src/*
 
 - name: test-and-build-artifacts
-  image: simplestakingcom/tezedge-ci-builder:latest
+  image: simplestakingcom/tezedge-ci-builder:appuser
   user: root
   volumes:
     - name: build
@@ -124,7 +124,7 @@ steps:
 
 
 - name: prepare-python-tests
-  image: simplestakingcom/tezedge-ci-builder:latest
+  image: simplestakingcom/tezedge-ci-builder:appuser
   user: root
   volumes:
     - name: build
@@ -138,7 +138,7 @@ steps:
     SODIUM_USE_PKG_CONFIG: 1
   commands:
     # copy the tezos src file from the imgage to a shared volume
-    - cp -R /tezos-src/tezos /tmp/tezos-src/tezos
+    - cp -R /home/appuser/tezos-src/tezos /tmp/tezos-src/tezos
     # prepare modified python files for tests (compatibility with tezedge node)
     - cp /tmp/tezos-src/modified/python-tests/daemons/node.py /tmp/tezos-src/tezos/tests_python/daemons/node.py
     - cp /tmp/tezos-src/modified/python-tests/launchers/sandbox.py /tmp/tezos-src/tezos/tests_python/launchers/sandbox.py
@@ -189,7 +189,7 @@ environment:
 
 steps:
 - name: tezedge-sandbox-run
-  image: simplestakingcom/tezedge-ci-builder:latest
+  image: simplestakingcom/tezedge-ci-builder:appuser
   pull: always
   user: root
   detach: true
@@ -399,7 +399,7 @@ steps:
 
 # run empty rust node and wait for it
 - name: tezedge-node-sandbox-run
-  image: simplestakingcom/tezedge-ci-builder:latest
+  image: simplestakingcom/tezedge-ci-builder:appuser
   pull: if-not-exists
   user: root
   detach: true
@@ -554,7 +554,7 @@ steps:
 
 # compare all rpc's from blocks 0 to 2 between defined nodes
 - name: rpc-test-for-levels-0-2
-  image: simplestakingcom/tezedge-ci-builder:latest
+  image: simplestakingcom/tezedge-ci-builder:appuser
   pull: if-not-exists
   user: root
   volumes:
@@ -616,7 +616,7 @@ steps:
       - rm -rf /tmp/tezedge_developer/tezos-node
 
   - name: tezedge-node-run-mainnet
-    image: simplestakingcom/tezedge-ci-builder:latest
+    image: simplestakingcom/tezedge-ci-builder:appuser
     pull: if-not-exists
     user: root
     detach: true
@@ -839,7 +839,7 @@ steps:
     - tezos-node-bootstrap --bootstrap --level=$${TO_BLOCK_HEADER} --node_ocaml_1=$${OCAML_NODE_RPC_CONTEXT_ROOT_1} --node_ocaml_2=$${OCAML_NODE_RPC_CONTEXT_ROOT_2} --node_ocaml_3=$${OCAML_NODE_RPC_CONTEXT_ROOT_3} --node_ocaml_4=$${OCAML_NODE_RPC_CONTEXT_ROOT_4}
 
 - name: tezedge-node-run
-  image: simplestakingcom/tezedge-ci-builder:latest
+  image: simplestakingcom/tezedge-ci-builder:appuser
   pull: if-not-exists
   user: root
   detach: true
@@ -861,7 +861,7 @@ steps:
 
 # if we are doing pull request, run also "target branch" build (async) for wrk total compare at the end
 - name: tezedge-target-branch-node-run
-  image: simplestakingcom/tezedge-ci-builder:latest
+  image: simplestakingcom/tezedge-ci-builder:appuser
   pull: if-not-exists
   user: root
   detach: true
@@ -935,7 +935,7 @@ steps:
 
 # compare all rpc's from FROM_BLOCK_HEADER to TO_BLOCK_HEADER between defined nodes
 - name: rpc-test
-  image: simplestakingcom/tezedge-ci-builder:latest
+  image: simplestakingcom/tezedge-ci-builder:appuser
   pull: if-not-exists
   user: root
   volumes:
@@ -1132,7 +1132,7 @@ steps:
       - tezos-node-bootstrap --bootstrap --level=$${TO_BLOCK_HEADER} --node_ocaml_1=$${OCAML_NODE_RPC_CONTEXT_ROOT_1} --node_ocaml_2=$${OCAML_NODE_RPC_CONTEXT_ROOT_2} --node_ocaml_3=$${OCAML_NODE_RPC_CONTEXT_ROOT_3} --node_ocaml_4=$${OCAML_NODE_RPC_CONTEXT_ROOT_4}
 
   - name: tezedge-node-run
-    image: simplestakingcom/tezedge-ci-builder:latest
+    image: simplestakingcom/tezedge-ci-builder:appuser
     pull: if-not-exists
     user: root
     detach: true
@@ -1198,7 +1198,7 @@ steps:
 
   # compare all rpc's from FROM_BLOCK_HEADER to TO_BLOCK_HEADER between defined nodes
   - name: rpc-test
-    image: simplestakingcom/tezedge-ci-builder:latest
+    image: simplestakingcom/tezedge-ci-builder:appuser
     pull: if-not-exists
     user: root
     volumes:
@@ -1262,7 +1262,7 @@ clone:
 
 steps:
 - name: mempool-test
-  image: simplestakingcom/tezedge-ci-builder:latest
+  image: simplestakingcom/tezedge-ci-builder:appuser
   user: root
   volumes:
     - name: build
@@ -1277,7 +1277,7 @@ steps:
     - cd /tmp/tezos-src/tezos/tests_python && poetry run pytest -s --log-dir=. tests/test_mempool.py
 
 - name: basic-test
-  image: simplestakingcom/tezedge-ci-builder:latest
+  image: simplestakingcom/tezedge-ci-builder:appuser
   pull: if-not-exists
   user: root
   failure: ignore
