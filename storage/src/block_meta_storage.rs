@@ -22,6 +22,9 @@ pub trait BlockMetaStorageReader: Sync + Send {
 
     /// Returns n-th predecessor for block_hash
     fn find_predecessor_at_distance(&self, block_hash: BlockHash, distance: i32) -> Result<Option<BlockHash>, StorageError>;
+
+    /// Return ancestors of requested [block_hash] according to max_ttl (something like limit) sorted by [BlockHash] bytes
+    fn get_live_blocks(&self, block_hash: BlockHash, max_ttl: usize) -> Result<Vec<BlockHash>, StorageError>;
 }
 
 #[derive(Clone)]
@@ -196,6 +199,38 @@ impl BlockMetaStorageReader for BlockMetaStorage {
         };
 
         Ok(result)
+    }
+
+    fn get_live_blocks(&self, block_hash: BlockHash, max_ttl: usize) -> Result<Vec<BlockHash>, StorageError> {
+        // Note: tezos ocaml for max_ttl=60 returns 61 blocks
+        let mut live_blocks_counter = max_ttl + 1;
+        let mut live_blocks = Vec::with_capacity(live_blocks_counter);
+
+        if let Some(_) = self.get(&block_hash)? {
+            // add requested header (if found)
+            live_blocks.push(block_hash.clone());
+            live_blocks_counter -= 1;
+
+            // lets find ancestors of requested header - (predecessors at distance 1)
+            let mut current = block_hash;
+            for _ in 0..live_blocks_counter {
+                match self.find_predecessor_at_distance(current, 1)? {
+                    Some(predecessor) => {
+                        live_blocks.push(predecessor.clone());
+                        current = predecessor
+                    },
+                    None => {
+                        // Note: if not predecessor, means, that we are done, genesis does not have predecessor
+                        break
+                    }
+                }
+            }
+        }
+
+        // sort by bytes
+        live_blocks.sort_by(|left, right| Ord::cmp(left, right));
+
+        Ok(live_blocks)
     }
 }
 

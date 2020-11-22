@@ -9,7 +9,7 @@ use slog::Logger;
 use crypto::hash::{chain_id_to_b58_string, HashType};
 use shell::shell_channel::BlockApplied;
 use shell::stats::memory::{Memory, MemoryData, MemoryStatsResult};
-use storage::{BlockHeaderWithHash, BlockStorage, BlockStorageReader, context_key, ContextActionRecordValue, ContextActionStorage};
+use storage::{BlockHeaderWithHash, BlockMetaStorage, BlockMetaStorageReader, BlockStorage, BlockStorageReader, context_key, ContextActionRecordValue, ContextActionStorage};
 use storage::block_storage::BlockJsonData;
 use storage::context::{ContextApi, TezedgeContext};
 use storage::context_action_storage::{ContextActionFilters, ContextActionJson, contract_id_to_contract_address_for_index};
@@ -155,23 +155,28 @@ pub(crate) fn get_block_shell_header(block_id: &str, persistent_storage: &Persis
     Ok(block)
 }
 
-pub(crate) fn live_blocks(_chain_param: &str, block_param: &str, env: &RpcServiceEnvironment) -> Result<Option<Vec<String>>, failure::Error> {
+pub(crate) fn live_blocks(_chain_param: &str, block_param: &str, env: &RpcServiceEnvironment) -> Result<Vec<String>, failure::Error> {
     let persistent_storage = env.persistent_storage();
     let state = env.state();
 
     let block_storage = BlockStorage::new(persistent_storage);
+    let block_meta_storage = BlockMetaStorage::new(persistent_storage);
+
+    // get max_ttl for requested block
     let block_hash = get_block_hash_by_block_id(block_param, persistent_storage, state)?;
-    let current_block = block_storage.get_with_additional_data(&block_hash)?;
-    let max_ttl: usize = match current_block {
+    let max_ttl: usize = match block_storage.get_with_additional_data(&block_hash)? {
         Some((_, json_data)) => {
             json_data.max_operations_ttl().into()
         }
-        None => bail!("Block not found for block id: {}", block_param)
+        None => bail!("Max_ttl not found for block id: {}", block_param)
     };
-    let block_level = get_block_level_by_block_id(block_param, 0, persistent_storage, state)?;
 
-    let live_blocks: Option<Vec<String>> = block_storage.get_live_blocks(block_level.try_into()?, max_ttl)?
-        .map(|blocks| blocks.iter().map(|b| HashType::BlockHash.bytes_to_string(&b)).collect());
+    // get live blocks
+    let live_blocks = block_meta_storage
+        .get_live_blocks(block_hash, max_ttl)?
+        .iter()
+        .map(|block| HashType::BlockHash.bytes_to_string(&block))
+        .collect();
 
     Ok(live_blocks)
 }

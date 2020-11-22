@@ -289,7 +289,7 @@ impl BlockchainState {
 
     /// Resulted history is sorted: "from oldest block to newest"
     fn compute_history(block_meta_storage: &BlockMetaStorage, caboose: Option<Head>, head: &BlockHash, max_size: u8, seed: &Seed) -> Result<Vec<BlockHash>, StorageError> {
-        if max_size <= 0 {
+        if max_size == 0 {
             return Ok(vec![]);
         }
 
@@ -312,7 +312,7 @@ impl BlockchainState {
                     history.push(predecessor.clone());
 
                     // decrement counter and continue
-                    counter = counter - 1;
+                    counter -= 1;
                     current_block_hash = predecessor;
                 }
                 None => {
