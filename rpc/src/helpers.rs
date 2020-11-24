@@ -15,6 +15,7 @@ use serde_json::Value;
 use crypto::hash::{BlockHash, chain_id_to_b58_string, ChainId, ContextHash, HashType};
 use shell::shell_channel::BlockApplied;
 use storage::{BlockMetaStorage, BlockMetaStorageReader, BlockStorage, BlockStorageReader, ChainMetaStorage};
+use storage::chain_meta_storage::ChainMetaStorageReader;
 use storage::context_action_storage::ContextActionType;
 use tezos_api::ffi::{RpcMethod, RpcRequest};
 use tezos_messages::p2p::encoding::block_header::Level;
@@ -439,9 +440,10 @@ pub(crate) fn parse_chain_id(chain_id_param: &str, env: &RpcServiceEnvironment) 
 /// - `genesis` - return genesis from RpcCollectedStateRef
 /// - `<level>` - return block which is on the level according to actual current_head branch
 /// - `<block_hash>` - return block hash directly
-/// - `<block>~<level>` - block can be: head/level/block_hash, e.g.: head~10 returns: the block which is 10 levels in the past from head)
+/// - `<block>~<level>` - block can be: genesis/head/level/block_hash, e.g.: head~10 returns: the block which is 10 levels in the past from head)
+/// - `<block>-<level>` - block can be: genesis/head/level/block_hash, e.g.: head-10 returns: the block which is 10 levels in the past from head)
 pub(crate) fn parse_block_hash(chain_id: &ChainId, block_id_param: &str, env: &RpcServiceEnvironment) -> Result<BlockHash, failure::Error> {
-    // split header and optional offset
+    // split header and optional offset (+, -, ~)
     let (block_param, offset_param) = {
         if block_id_param.contains('~') {
             let splits: Vec<&str> = block_id_param.split('~').collect();
@@ -450,8 +452,20 @@ pub(crate) fn parse_block_hash(chain_id: &ChainId, block_id_param: &str, env: &R
                 2 => (splits[0], Some(splits[1].parse::<i32>()?)),
                 _ => bail!("Invalid block_id parameter: {}", block_id_param)
             }
-        } else if block_id_param.contains('-') || block_id_param.contains('+') {
-            bail!("TODO: TE-221 - Not yet implemented block header parsing for '-/+', block_id_param: {}", block_id_param)
+        } else if block_id_param.contains('-') {
+            let splits: Vec<&str> = block_id_param.split('~').collect();
+            match splits.len() {
+                1 => (splits[0], None),
+                2 => (splits[0], Some(splits[1].parse::<i32>()?)),
+                _ => bail!("Invalid block_id parameter: {}", block_id_param)
+            }
+        } else if block_id_param.contains('+') {
+            let splits: Vec<&str> = block_id_param.split('~').collect();
+            match splits.len() {
+                1 => (splits[0], None),
+                2 => (splits[0], Some(splits[1].parse::<i32>()? * -1)),
+                _ => bail!("Invalid block_id parameter: {}", block_id_param)
+            }
         } else {
             (block_id_param, None)
         }
@@ -476,13 +490,23 @@ pub(crate) fn parse_block_hash(chain_id: &ChainId, block_id_param: &str, env: &R
             let (current_head, _) = current_head()?;
             if let Some(offset) = offset_param {
                 if offset < 0 {
-                    bail!("Offset for head parameter cannot be used with '+', block_id_param: {}", block_id_param);
+                    bail!("Offset for `head` parameter cannot be used with '+', block_id_param: {}", block_id_param);
                 }
             }
             (current_head, offset_param)
         }
         "genesis" => {
-            bail!("Not yet supported block_id_param: {}", block_id_param)
+            match ChainMetaStorage::new(env.persistent_storage()).get_genesis(chain_id)? {
+                Some(genesis) => {
+                    if let Some(offset) = offset_param {
+                        if offset > 0 {
+                            bail!("Offset for `genesis` parameter cannot be used with '~/-', block_id_param: {}", block_id_param);
+                        }
+                    }
+                    (genesis.into(), offset_param)
+                }
+                None => bail!("No genesis found for chain_id: {}", HashType::ChainId.bytes_to_string(chain_id))
+            }
         }
         level_or_hash => {
             // try to parse level as number
@@ -514,12 +538,10 @@ pub(crate) fn parse_block_hash(chain_id: &ChainId, block_id_param: &str, env: &R
         }
     };
 
-    // find requested header, if no offset we use 0
-
-
+    // find requested header, if no offset we return header
     let block_hash = if let Some(offset) = offset {
         match BlockMetaStorage::new(env.persistent_storage())
-            .find_predecessor_at_distance(block_hash, offset)? {
+            .find_block_at_distance(block_hash, offset)? {
             Some(block_hash) => block_hash,
             None => bail!("Unknown block for block_id_param: {}", block_id_param)
         }

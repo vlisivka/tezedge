@@ -21,7 +21,7 @@ pub trait BlockMetaStorageReader: Sync + Send {
     fn get(&self, block_hash: &BlockHash) -> Result<Option<Meta>, StorageError>;
 
     /// Returns n-th predecessor for block_hash
-    fn find_predecessor_at_distance(&self, block_hash: BlockHash, distance: i32) -> Result<Option<BlockHash>, StorageError>;
+    fn find_block_at_distance(&self, block_hash: BlockHash, distance: i32) -> Result<Option<BlockHash>, StorageError>;
 
     /// Return ancestors of requested [block_hash] according to max_ttl (something like limit) sorted by [BlockHash] bytes
     fn get_live_blocks(&self, block_hash: BlockHash, max_ttl: usize) -> Result<Vec<BlockHash>, StorageError>;
@@ -159,9 +159,16 @@ impl BlockMetaStorageReader for BlockMetaStorage {
     }
 
     // TODO: TE-203 - find predecessor re-write in much more optimized and fast way, e.g. like tezos ocaml original impl
-    fn find_predecessor_at_distance(&self, block_hash: BlockHash, requested_distance: i32) -> Result<Option<BlockHash>, StorageError> {
+    /// Find header at distance from block_hash.
+    /// If `0` return block_hash
+    /// If `positive value` - searched backward through predecessors
+    /// If `negative value` - searched forwards through successors (reorg, should choose branch related to current head)
+    fn find_block_at_distance(&self, block_hash: BlockHash, requested_distance: i32) -> Result<Option<BlockHash>, StorageError> {
         if requested_distance == 0 {
             return Ok(Some(block_hash));
+        }
+        if requested_distance < 0 {
+            unimplemented!("TODO: TE-238 - Not yet implemented block header parsing for '+' - means we need to go forwards throught successors, this could be tricky and should be related to current head branch - reorg");
         }
 
         let result = {
@@ -214,7 +221,7 @@ impl BlockMetaStorageReader for BlockMetaStorage {
             // lets find ancestors of requested header - (predecessors at distance 1)
             let mut current = block_hash;
             for _ in 0..live_blocks_counter {
-                match self.find_predecessor_at_distance(current, 1)? {
+                match self.find_block_at_distance(current, 1)? {
                     Some(predecessor) => {
                         live_blocks.push(predecessor.clone());
                         current = predecessor

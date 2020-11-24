@@ -306,7 +306,7 @@ impl BlockchainState {
             let distance = step.next();
 
             // need to find predecesor at requested distance
-            match block_meta_storage.find_predecessor_at_distance(current_block_hash, distance)? {
+            match block_meta_storage.find_block_at_distance(current_block_hash, distance)? {
                 Some(predecessor) => {
                     // add to history
                     history.push(predecessor.clone());

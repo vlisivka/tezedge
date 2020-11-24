@@ -258,8 +258,10 @@ pub fn store_commit_genesis_result(
                 genesis.header.fitness().clone(),
             );
 
-            chain_meta_storage.set_current_head(&chain_id, head.clone())?;
-            chain_meta_storage.set_caboose(&chain_id, head)?;
+            // init chain data
+            chain_meta_storage.set_genesis(&chain_id, head.clone())?;
+            chain_meta_storage.set_caboose(&chain_id, head.clone())?;
+            chain_meta_storage.set_current_head(&chain_id, head)?;
 
             Ok(block_json_data)
         }
