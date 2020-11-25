@@ -69,9 +69,9 @@ pub async fn dev_stats_memory(_: Request<Body>, _: Params, _: Query, env: RpcSer
     }
 }
 
-pub async fn database_memstats(_: Request<Body>, _: Params, _: Query, env: RpcServiceEnvironment) -> ServiceResult {
+pub async fn context_stats(_: Request<Body>, _: Params, _: Query, env: RpcServiceEnvironment) -> ServiceResult {
     result_to_json_response(
-        base_services::get_database_memstats(env.tezedge_context()),
+        base_services::get_context_stats(env.tezedge_context()),
         env.log(),
     )
 }

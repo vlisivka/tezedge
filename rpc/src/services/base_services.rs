@@ -298,7 +298,7 @@ pub(crate) fn get_node_version(network_version: &NetworkVersion) -> Result<NodeV
     Ok(NodeVersion::new(network_version))
 }
 
-pub(crate) fn get_database_memstats(context: &TezedgeContext) -> Result<MerkleStorageStats, failure::Error> {
+pub(crate) fn get_context_stats(context: &TezedgeContext) -> Result<MerkleStorageStats, failure::Error> {
     let stats = context.get_merkle_stats()?;
 
     Ok(stats)
